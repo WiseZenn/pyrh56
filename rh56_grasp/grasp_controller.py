@@ -1,14 +1,14 @@
 """High-level RH56 grasp controller built on RH56Driver."""
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence
 
 from rh56_sdk.constants import RH56_OPEN_FRAME
 
 from .benchmark_logger import BenchmarkLogger
 from .gestures import MAIN_FINGERS, get_closure_target, get_gesture
-from .pressure_close import PressureCloseConfig, PressureCloseResult, PressureCloser
+from .pressure_close import PressureCloseConfig, PressureCloser, PressureCloseResult
 from .state_machine import GraspState, GraspStateMachine
 
 
@@ -17,7 +17,7 @@ class GraspTrialResult:
     trial_id: int
     grasp_type: str
     pressure_result: PressureCloseResult
-    target_frame: List[int]
+    target_frame: list[int]
     speed: int
     force_threshold: int
     object_name: str = ""
@@ -32,7 +32,7 @@ class GraspController:
     def __init__(
         self,
         driver,
-        logger: Optional[BenchmarkLogger] = None,
+        logger: BenchmarkLogger | None = None,
         default_speed: int = 250,
         pre_shape_timeout: float = 3.0,
         pre_shape_tolerance: int = 30,
@@ -50,7 +50,7 @@ class GraspController:
     def state(self) -> GraspState:
         return self.state_machine.state
 
-    def open(self, speed: Optional[int] = None) -> None:
+    def open(self, speed: int | None = None) -> None:
         """Move to full open hand."""
         self._set_speed_if_needed(speed)
         self.driver.move_to(RH56_OPEN_FRAME)
@@ -60,13 +60,13 @@ class GraspController:
         else:
             self.state_machine.force(GraspState.OPEN)
 
-    def release(self, speed: Optional[int] = None) -> None:
+    def release(self, speed: int | None = None) -> None:
         """Release object and return to open."""
         if self.state != GraspState.RELEASE:
             self.state_machine.force(GraspState.RELEASE)
         self.open(speed=speed)
 
-    def pre_shape(self, grasp_type: str, speed: Optional[int] = None) -> List[int]:
+    def pre_shape(self, grasp_type: str, speed: int | None = None) -> list[int]:
         """Move to a named pre-shape frame."""
         frame = get_gesture(grasp_type)
         self._set_speed_if_needed(speed)
@@ -95,9 +95,9 @@ class GraspController:
         self,
         grasp_type: str,
         force_threshold: int = 80,
-        speed: Optional[int] = None,
-        active_fingers: Optional[Sequence[int]] = None,
-        config: Optional[PressureCloseConfig] = None,
+        speed: int | None = None,
+        active_fingers: Sequence[int] | None = None,
+        config: PressureCloseConfig | None = None,
     ) -> PressureCloseResult:
         """Incrementally close from current frame until contact is detected."""
         self._set_speed_if_needed(speed)
@@ -125,12 +125,12 @@ class GraspController:
         self,
         grasp_type: str,
         force_threshold: int = 80,
-        speed: Optional[int] = None,
+        speed: int | None = None,
         object_name: str = "",
         object_size: str = "",
         object_weight: str = "",
         object_material: str = "",
-        config: Optional[PressureCloseConfig] = None,
+        config: PressureCloseConfig | None = None,
     ) -> GraspTrialResult:
         """Run pre-shape -> pressure close and optionally log one trial."""
         trial_id = self.logger.next_trial_id() if self.logger else 1
@@ -169,7 +169,7 @@ class GraspController:
                 raise RuntimeError(f"RH56 fault during hold: status={status} error={error}")
             time.sleep(0.05)
 
-    def _set_speed_if_needed(self, speed: Optional[int]) -> None:
+    def _set_speed_if_needed(self, speed: int | None) -> None:
         value = self.default_speed if speed is None else int(speed)
         self.driver.set_speed([value] * 6)
 
@@ -191,7 +191,7 @@ class GraspController:
         return False
 
     @staticmethod
-    def _trial_record(trial: GraspTrialResult) -> Dict[str, object]:
+    def _trial_record(trial: GraspTrialResult) -> dict[str, object]:
         result = trial.pressure_result
         return {
             "trial_id": trial.trial_id,

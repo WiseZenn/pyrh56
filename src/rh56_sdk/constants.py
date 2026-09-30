@@ -1,8 +1,8 @@
 # ------------------------------------------------------------------
-#  Safe defaults (correspond to core.py open/close frame definitions)
+#  Default open/close presets in device coordinates
 # ------------------------------------------------------------------
-RH56_OPEN_FRAME = [1000, 1000, 1000, 1000, 700, 900]
-RH56_CLOSE_FRAME = [0, 0, 0, 0, 200, 900]
+RH56_OPEN_FRAME = [1000, 1000, 1000, 1000, 1000, 900]
+RH56_CLOSE_FRAME = [0, 0, 0, 0, 0, 900]
 
 SERVO_COUNT = 6
 SERVO_MIN = 0
@@ -21,8 +21,8 @@ RH56_THUMB_ROT_INDEX = 5
 # ------------------------------------------------------------------
 #  Thumb-specific limits
 # ------------------------------------------------------------------
-RH56_THUMB_FLEX_CLOSE_LIMIT = 200
-RH56_THUMB_FLEX_OPEN_LIMIT = 700
+RH56_THUMB_FLEX_CLOSE_LIMIT = 0
+RH56_THUMB_FLEX_OPEN_LIMIT = 1000
 RH56_THUMB_FLEX_FACTORY_OPEN_LIMIT = 1000
 RH56_THUMB_ROT_SAFE = 900
 

@@ -3,9 +3,9 @@
 import csv
 import json
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, Iterable
-
+from typing import Any
 
 TRIAL_FIELDS = [
     "trial_id",
@@ -45,7 +45,7 @@ class BenchmarkLogger:
             rows = list(csv.DictReader(file))
             return len(rows) + 1
 
-    def log(self, record: Dict[str, Any]) -> None:
+    def log(self, record: dict[str, Any]) -> None:
         """Append one trial record."""
         normalized = self._normalize_record(record)
         if self.path.suffix.lower() == ".jsonl":
@@ -60,7 +60,7 @@ class BenchmarkLogger:
                 writer.writeheader()
             writer.writerow(normalized)
 
-    def _normalize_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_record(self, record: dict[str, Any]) -> dict[str, Any]:
         normalized = {field: record.get(field, "") for field in TRIAL_FIELDS}
         normalized["timestamp"] = normalized["timestamp"] or time.time()
         for field in ("target_frame", "actual_position", "force_curve"):

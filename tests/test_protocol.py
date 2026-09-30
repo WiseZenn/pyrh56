@@ -12,8 +12,7 @@ from rh56_sdk.protocol import (
     parse_read_response,
     parse_u16_le,
 )
-from rh56_sdk.registers import REG_ANGLE_ACT, REG_ANGLE_SET
-from rh56_sdk.registers import REG_GESTURE_FORCE_CLB
+from rh56_sdk.registers import REG_ANGLE_ACT, REG_ANGLE_SET, REG_GESTURE_FORCE_CLB
 
 
 def _hex(data: bytes) -> str:
@@ -21,15 +20,18 @@ def _hex(data: bytes) -> str:
 
 
 def _read_response(node_id: int, addr: int, data: bytes) -> bytes:
-    body = bytes(
-        [
-            node_id,
-            len(data) + 3,
-            RH56Protocol.CMD_READ,
-            addr & 0xFF,
-            (addr >> 8) & 0xFF,
-        ]
-    ) + data
+    body = (
+        bytes(
+            [
+                node_id,
+                len(data) + 3,
+                RH56Protocol.CMD_READ,
+                addr & 0xFF,
+                (addr >> 8) & 0xFF,
+            ]
+        )
+        + data
+    )
     return RH56Protocol.HEADER_RESP + body + bytes([RH56Protocol.checksum(body)])
 
 
@@ -79,7 +81,9 @@ class ProtocolTests(unittest.TestCase):
             RH56Protocol.parse_write_ack(ack, 1, REG_ANGLE_SET)
 
     def test_write_byte_payload_boundary(self) -> None:
-        self.assertIsInstance(build_write_bytes_frame(1, REG_GESTURE_FORCE_CLB, b"\x01" * 252), bytes)
+        self.assertIsInstance(
+            build_write_bytes_frame(1, REG_GESTURE_FORCE_CLB, b"\x01" * 252), bytes
+        )
         with self.assertRaises(RH56ProtocolError):
             build_write_bytes_frame(1, REG_GESTURE_FORCE_CLB, b"\x01" * 253)
 

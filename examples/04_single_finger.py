@@ -1,7 +1,6 @@
 import argparse
 import time
 
-
 from rh56_sdk import RH56Driver
 from rh56_sdk.constants import RH56_OPEN_FRAME
 

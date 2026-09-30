@@ -1,12 +1,11 @@
 """Reusable RH56 grasp pre-shapes.
 
 Values use the SDK ANGLE_SET coordinate space. Lower values close fingers.
-Thumb flex is kept at or above the SDK safety minimum of 200.
+These grasp presets keep thumb flex at or above 200 as a grasp policy;
+the SDK's default command range is 0-1000.
 """
 
-from typing import Dict, List
-
-GESTURES: Dict[str, List[int]] = {
+GESTURES: dict[str, list[int]] = {
     "open": [1000, 1000, 1000, 1000, 1000, 900],
     "ready_open": [1000, 1000, 1000, 1000, 700, 900],
     "fist": [0, 0, 0, 0, 200, 900],
@@ -16,7 +15,7 @@ GESTURES: Dict[str, List[int]] = {
     "hook": [100, 100, 100, 100, 700, 900],
 }
 
-MAIN_FINGERS: Dict[str, List[int]] = {
+MAIN_FINGERS: dict[str, list[int]] = {
     "open": [],
     "ready_open": [],
     "fist": [0, 1, 2, 3, 4],
@@ -26,7 +25,7 @@ MAIN_FINGERS: Dict[str, List[int]] = {
     "hook": [0, 1, 2, 3],
 }
 
-CLOSURE_TARGETS: Dict[str, List[int]] = {
+CLOSURE_TARGETS: dict[str, list[int]] = {
     "open": list(GESTURES["open"]),
     "ready_open": list(GESTURES["ready_open"]),
     "fist": list(GESTURES["fist"]),
@@ -37,12 +36,12 @@ CLOSURE_TARGETS: Dict[str, List[int]] = {
 }
 
 
-def list_gestures() -> List[str]:
+def list_gestures() -> list[str]:
     """Return available gesture names."""
     return sorted(GESTURES)
 
 
-def get_gesture(name: str) -> List[int]:
+def get_gesture(name: str) -> list[int]:
     """Return a copy of a named gesture frame."""
     try:
         return list(GESTURES[name])
@@ -50,7 +49,7 @@ def get_gesture(name: str) -> List[int]:
         raise ValueError(f"Unknown gesture: {name}") from exc
 
 
-def get_closure_target(name: str) -> List[int]:
+def get_closure_target(name: str) -> list[int]:
     """Return the lower-angle target used during pressure closing."""
     try:
         return list(CLOSURE_TARGETS[name])

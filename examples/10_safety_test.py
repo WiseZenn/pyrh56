@@ -1,10 +1,9 @@
 import math
 
-
 from rh56_sdk import RH56Driver
 from rh56_sdk.constants import RH56_OPEN_FRAME
-from rh56_sdk.safety import validate_frame
 from rh56_sdk.exceptions import RH56NotConnectedError, RH56ValidationError
+from rh56_sdk.safety import validate_frame
 
 
 def expect_error(label, exc_type, func) -> None:

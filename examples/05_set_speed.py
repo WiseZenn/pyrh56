@@ -1,6 +1,5 @@
 import argparse
 
-
 from rh56_sdk import RH56Driver
 
 

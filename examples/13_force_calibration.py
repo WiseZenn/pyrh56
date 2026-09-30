@@ -3,16 +3,13 @@ import json
 import time
 from pathlib import Path
 
-
 from rh56_sdk import RH56Driver
 from rh56_sdk.calibration import ForceCalibration
 from rh56_sdk.diagnostics import RH56Diagnostics
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Trigger official RH56 force-sensor calibration."
-    )
+    parser = argparse.ArgumentParser(description="Trigger official RH56 force-sensor calibration.")
     parser.add_argument("--port", default="COM7")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--timeout", type=float, default=8.0)

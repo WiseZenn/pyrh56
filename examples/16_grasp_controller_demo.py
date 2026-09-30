@@ -2,8 +2,8 @@ import argparse
 import json
 from pathlib import Path
 
+from rh56_grasp import BenchmarkLogger, GraspController, PressureCloseConfig
 from rh56_sdk import RH56Driver
-from rh56_grasp import BenchmarkLogger, GraspController, PressureCloseConfig  # noqa: E402
 
 
 def main() -> None:

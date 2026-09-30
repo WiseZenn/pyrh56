@@ -10,22 +10,22 @@ from .gestures import (
     list_gestures,
 )
 from .grasp_controller import GraspController, GraspTrialResult
-from .pressure_close import PressureCloseConfig, PressureCloseResult, PressureCloser
+from .pressure_close import PressureCloseConfig, PressureCloser, PressureCloseResult
 from .state_machine import GraspState, GraspStateMachine
 
 __all__ = [
-    "BenchmarkLogger",
-    "GESTURES",
     "CLOSURE_TARGETS",
+    "GESTURES",
     "MAIN_FINGERS",
-    "get_closure_target",
-    "get_gesture",
-    "list_gestures",
+    "BenchmarkLogger",
     "GraspController",
+    "GraspState",
+    "GraspStateMachine",
     "GraspTrialResult",
     "PressureCloseConfig",
     "PressureCloseResult",
     "PressureCloser",
-    "GraspState",
-    "GraspStateMachine",
+    "get_closure_target",
+    "get_gesture",
+    "list_gestures",
 ]

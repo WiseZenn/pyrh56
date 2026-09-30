@@ -45,3 +45,6 @@ data/
 
 # OS
 Thumbs.db
+
+# Vendor downloads kept locally for reference; never redistribute in this package
+.reference/

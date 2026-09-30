@@ -8,11 +8,12 @@ import time
 from pathlib import Path
 from typing import Any, Protocol
 
+from .configuration import _check_duration, _check_integer
 from .constants import SERVO_COUNT
 from .exceptions import RH56BusyError, RH56CalibrationError, RH56ValidationError
 from .registers import REG_GESTURE_FORCE_CLB
 
-__all__ = ["ForceCalibration", "ForceCalibrationProfile", "CalibrationDriver"]
+__all__ = ["CalibrationDriver", "ForceCalibration", "ForceCalibrationProfile"]
 
 
 class CalibrationDriver(Protocol):
@@ -47,6 +48,9 @@ class ForceCalibration:
         require_confirm: bool = True,
     ) -> bool:
         """Trigger the official RH56 force-sensor calibration routine."""
+        _check_duration(timeout, "calibration wait")
+        if wait and timeout < 6.0:
+            raise RH56ValidationError("calibration wait must be >= 6 seconds")
         hand = self._hand
         hand._ensure_connected()
         if require_confirm:
@@ -59,16 +63,15 @@ class ForceCalibration:
 
         errors_before = hand.read_error()
         if any(errors_before):
-            raise RH56CalibrationError(
-                f"Cannot calibrate while error exists: {errors_before}"
-            )
+            raise RH56CalibrationError(f"Cannot calibrate while error exists: {errors_before}")
 
         started = False
         hand.is_calibrating = True
-        hand._calibration_busy_until = time.monotonic() + float(timeout)
+        hand._calibration_busy_until = time.monotonic() + max(6.0, timeout)
         try:
-            hand._write_u8(REG_GESTURE_FORCE_CLB, 1, wait_ack=True)
+            # Even a missing ACK may mean the calibration write reached the hand.
             started = True
+            hand._write_u8(REG_GESTURE_FORCE_CLB, 1, wait_ack=True)
             if not wait:
                 hand.last_calibration_time = time.time()
                 return True
@@ -78,9 +81,9 @@ class ForceCalibration:
             errors_after = hand.read_error()
             force_after = hand.read_force()
             status_after = hand.read_status()
-            if any(errors_after):
+            if any(errors_after) or any(code in {5, 6, 7} for code in status_after):
                 raise RH56CalibrationError(
-                    f"Calibration finished with errors: {errors_after}"
+                    f"Calibration finished with errors={errors_after}, status={status_after}"
                 )
 
             hand.last_calibration_time = time.time()
@@ -88,7 +91,10 @@ class ForceCalibration:
             hand.last_feedback["status_after_calibration"] = status_after
             return True
         finally:
-            if wait or not started:
+            if not started or (
+                hand._calibration_busy_until is not None
+                and time.monotonic() >= hand._calibration_busy_until
+            ):
                 hand.is_calibrating = False
                 hand._calibration_busy_until = None
 
@@ -96,7 +102,7 @@ class ForceCalibration:
         """Record software-side unloaded FORCE_ACT baseline."""
         force_samples = self._sample_force(samples, interval)
         channels = list(zip(*force_samples))
-        offset = [int(round(statistics.median(ch))) for ch in channels]
+        offset = [round(statistics.median(ch)) for ch in channels]
         self._hand.force_zero_offset = offset
         self._hand.last_calibration_time = time.time()
         return list(offset)
@@ -107,11 +113,18 @@ class ForceCalibration:
         samples: int = 20,
         tolerance: int = 30,
         interval: float = 0.02,
+        use_offset: bool = False,
     ) -> dict[str, object]:
         """Sample FORCE_ACT and judge whether unloaded force is near zero."""
+        _check_integer(tolerance, "tolerance", 0, 32767)
         force_samples = self._sample_force(samples, interval)
+        if use_offset:
+            force_samples = [
+                [value - offset for value, offset in zip(row, self._hand.force_zero_offset)]
+                for row in force_samples
+            ]
         channels = list(zip(*force_samples))
-        median = [int(round(statistics.median(ch))) for ch in channels]
+        median = [round(statistics.median(ch)) for ch in channels]
         maximum_abs = [max(abs(v) for v in ch) for ch in channels]
         std = [statistics.pstdev(ch) if len(ch) > 1 else 0.0 for ch in channels]
         ok = all(abs(v) <= tolerance for v in median)
@@ -123,6 +136,7 @@ class ForceCalibration:
             "max_abs": maximum_abs,
             "std": std,
             "force_zero_offset": list(self._hand.force_zero_offset),
+            "uses_offset": use_offset,
         }
 
     def get_net_force(self) -> list[int]:
@@ -143,16 +157,23 @@ class ForceCalibration:
 
     def load_profile(self, path: str | Path) -> dict[str, Any]:
         """Load a baseline profile and apply its `force_zero_offset`."""
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeError) as exc:
+            raise RH56ValidationError(f"Invalid calibration JSON: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise RH56ValidationError("calibration profile must be a JSON object")
         offset = payload.get("force_zero_offset")
         if not isinstance(offset, list) or len(offset) != SERVO_COUNT:
             raise RH56ValidationError("force_zero_offset must contain 6 values")
-        self._hand.force_zero_offset = [int(value) for value in offset]
+        for value in offset:
+            _check_integer(value, "force_zero_offset value", -32768, 32767)
+        self._hand.force_zero_offset = list(offset)
         return payload
 
     def _sample_force(self, samples: int, interval: float) -> list[list[int]]:
-        if samples < 1:
-            raise RH56ValidationError("samples must be >= 1")
+        _check_integer(samples, "samples", 1, 2**31 - 1)
+        _check_duration(interval, "sample interval", allow_zero=True)
         collected = []
         for index in range(samples):
             collected.append(self._hand.read_force())

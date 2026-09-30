@@ -1,6 +1,6 @@
 import unittest
 
-from rh56_grasp import (  # noqa: E402
+from rh56_grasp import (
     GraspController,
     GraspState,
     PressureCloseConfig,
