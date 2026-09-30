@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import time
-from typing import Optional, Protocol, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 
 from .constants import SERVO_COUNT
 from .exceptions import RH56CalibrationError, RH56ValidationError
 from .models import FeedbackSnapshot, JointVector
 
-__all__ = ["RH56Diagnostics", "DiagnosticsDriver"]
+__all__ = ["DiagnosticsDriver", "RH56Diagnostics"]
 
 
 class DiagnosticsDriver(Protocol):
@@ -41,7 +42,7 @@ class DiagnosticsDriver(Protocol):
 
     def set_speed(self, values: Sequence[int | float]) -> None: ...
 
-    def move_finger(self, finger_index: int, value: int | float) -> None: ...
+    def move_finger(self, finger_index: int, value: float) -> None: ...
 
 
 class RH56Diagnostics:
@@ -85,12 +86,12 @@ class RH56Diagnostics:
     def characterize_angle_tracking(
         self,
         *,
-        points: Optional[Sequence[int]] = None,
-        fingers: Optional[Sequence[int]] = None,
+        points: Sequence[int] | None = None,
+        fingers: Sequence[int] | None = None,
         tolerance: int = 30,
         timeout: float = 2.0,
         dwell: float = 0.05,
-        speed: Optional[int] = None,
+        speed: int | None = None,
         require_confirm: bool = True,
     ) -> dict[str, object]:
         """Measure ANGLE_SET -> ANGLE_ACT tracking error."""

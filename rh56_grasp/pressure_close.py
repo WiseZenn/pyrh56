@@ -1,10 +1,8 @@
 """Force-aware incremental closing for RH56 grasps."""
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence
-
-
 
 FAULT_STATUS = {5, 6, 7}
 
@@ -27,18 +25,18 @@ class PressureCloseConfig:
 @dataclass
 class PressureCloseResult:
     success: bool
-    final_frame: List[int]
-    actual_position: List[int]
-    force_curve: List[List[int]]
+    final_frame: list[int]
+    actual_position: list[int]
+    force_curve: list[list[int]]
     max_force: int
     closing_time: float
     hold_time: float
-    contact_fingers: List[int]
+    contact_fingers: list[int]
     slip_detected: bool = False
     possible_finger_collision: bool = False
     failure_reason: str = ""
-    status: List[int] = field(default_factory=list)
-    error: List[int] = field(default_factory=list)
+    status: list[int] = field(default_factory=list)
+    error: list[int] = field(default_factory=list)
 
 
 class PressureCloser:
@@ -52,18 +50,18 @@ class PressureCloser:
         start_frame: Sequence[int],
         target_frame: Sequence[int],
         active_fingers: Sequence[int],
-        config: Optional[PressureCloseConfig] = None,
+        config: PressureCloseConfig | None = None,
     ) -> PressureCloseResult:
         config = config or PressureCloseConfig()
         frame = list(start_frame)
         target = list(target_frame)
         active = list(active_fingers)
-        frozen: Dict[int, bool] = {finger: False for finger in active}
-        force_curve: List[List[int]] = []
+        frozen: dict[int, bool] = {finger: False for finger in active}
+        force_curve: list[list[int]] = []
         start = time.monotonic()
         last_angle = list(frame)
-        last_status: List[int] = []
-        last_error: List[int] = []
+        last_status: list[int] = []
+        last_error: list[int] = []
         max_force = 0
         command_target_reached = False
 
@@ -79,19 +77,40 @@ class PressureCloser:
             max_force = max(max_force, max(abs(v) for v in force))
 
             if any(error):
-                return self._result(False, frame, angle, force_curve, max_force, start,
-                                    0.0, frozen, "hardware_error", status, error)
+                return self._result(
+                    False,
+                    frame,
+                    angle,
+                    force_curve,
+                    max_force,
+                    start,
+                    0.0,
+                    frozen,
+                    "hardware_error",
+                    status,
+                    error,
+                )
             if any(code in FAULT_STATUS for code in status):
-                return self._result(False, frame, angle, force_curve, max_force, start,
-                                    0.0, frozen, "fault_status", status, error)
+                return self._result(
+                    False,
+                    frame,
+                    angle,
+                    force_curve,
+                    max_force,
+                    start,
+                    0.0,
+                    frozen,
+                    "fault_status",
+                    status,
+                    error,
+                )
 
             contact_changed = False
             for finger in active:
-                if self._contact_detected(force[finger], config):
-                    if not frozen[finger]:
-                        frame[finger] = self._safe_freeze_target(finger, angle[finger], config)
-                        frozen[finger] = True
-                        contact_changed = True
+                if self._contact_detected(force[finger], config) and not frozen[finger]:
+                    frame[finger] = self._safe_freeze_target(finger, angle[finger], config)
+                    frozen[finger] = True
+                    contact_changed = True
 
             if contact_changed:
                 self.driver.move_to(frame)
@@ -147,16 +166,38 @@ class PressureCloser:
                 angle, target, active, config.target_tolerance
             ):
                 reason = "actual_target_reached_without_contact"
-                return self._result(False, frame, angle, force_curve, max_force, start,
-                                    0.0, frozen, reason, status, error)
+                return self._result(
+                    False,
+                    frame,
+                    angle,
+                    force_curve,
+                    max_force,
+                    start,
+                    0.0,
+                    frozen,
+                    reason,
+                    status,
+                    error,
+                )
 
             if config.period > 0:
                 time.sleep(config.period)
 
-        return self._result(False, frame, last_angle, force_curve, max_force, start,
-                            0.0, frozen, "timeout", last_status, last_error)
+        return self._result(
+            False,
+            frame,
+            last_angle,
+            force_curve,
+            max_force,
+            start,
+            0.0,
+            frozen,
+            "timeout",
+            last_status,
+            last_error,
+        )
 
-    def _read_force_net(self) -> List[int]:
+    def _read_force_net(self) -> list[int]:
         if hasattr(self.driver, "get_force_net"):
             return list(self.driver.get_force_net())
         return list(self.driver.read_force())
@@ -164,9 +205,9 @@ class PressureCloser:
     def _hold(
         self,
         config: PressureCloseConfig,
-        force_curve: List[List[int]],
+        force_curve: list[list[int]],
         max_force: int,
-    ) -> Dict[str, object]:
+    ) -> dict[str, object]:
         start = time.monotonic()
         slip_detected = False
         baseline = max_force
@@ -188,9 +229,9 @@ class PressureCloser:
 
     @staticmethod
     def _actual_target_reached(
-        angle: List[int],
-        target: List[int],
-        active: List[int],
+        angle: list[int],
+        target: list[int],
+        active: list[int],
         tolerance: int,
     ) -> bool:
         return all(abs(angle[finger] - target[finger]) <= tolerance for finger in active)
@@ -229,16 +270,16 @@ class PressureCloser:
     @staticmethod
     def _result(
         success: bool,
-        frame: List[int],
-        angle: List[int],
-        force_curve: List[List[int]],
+        frame: list[int],
+        angle: list[int],
+        force_curve: list[list[int]],
         max_force: int,
         start: float,
         hold_time: float,
-        frozen: Dict[int, bool],
+        frozen: dict[int, bool],
         failure_reason: str,
-        status: List[int],
-        error: List[int],
+        status: list[int],
+        error: list[int],
         slip_detected: bool = False,
         possible_finger_collision: bool = False,
     ) -> PressureCloseResult:

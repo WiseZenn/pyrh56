@@ -1,7 +1,7 @@
 """Configuration objects for the RH56 SDK."""
 
-from dataclasses import dataclass, field
 import math
+from dataclasses import dataclass, field
 
 from .exceptions import RH56ValidationError
 

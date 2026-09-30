@@ -1,7 +1,6 @@
 import argparse
 import json
 
-
 from rh56_sdk import RH56Driver
 from rh56_sdk.calibration import ForceCalibration
 from rh56_sdk.diagnostics import RH56Diagnostics

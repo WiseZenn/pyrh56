@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
 import json
 import math
 import sys
 import time
 from collections.abc import Sequence
+from dataclasses import asdict
 from typing import Any, NoReturn
 
 from . import __version__
 from .calibration import ForceCalibration
-from .configuration import DEFAULT_LIMITS, FACTORY_LIMITS, CONSERVATIVE_LIMITS, RH56Config
+from .configuration import CONSERVATIVE_LIMITS, DEFAULT_LIMITS, FACTORY_LIMITS, RH56Config
 from .driver import RH56Driver
 from .enums import Finger
-from .registers import STATUS_TEXT
 from .exceptions import (
     RH56ConnectionError,
     RH56Error,
@@ -26,6 +25,7 @@ from .exceptions import (
     RH56TimeoutError,
     RH56ValidationError,
 )
+from .registers import STATUS_TEXT
 from .safety import (
     make_safe_close_frame,
     make_safe_open_frame,

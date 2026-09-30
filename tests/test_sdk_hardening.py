@@ -10,9 +10,9 @@ from rh56_sdk import (
     DEFAULT_LIMITS,
     FACTORY_LIMITS,
     HandLimits,
+    RetryPolicy,
     RH56Config,
     RH56Driver,
-    RetryPolicy,
 )
 from rh56_sdk.calibration import ForceCalibration
 from rh56_sdk.configuration import FaultPolicy, JointLimit
@@ -143,17 +143,21 @@ def test_open_close_presets_respect_selected_thumb_limits(limits, minimum, maxim
 @pytest.mark.parametrize("thumb", [-1, 1001])
 def test_default_thumb_boundaries_still_reject_outside_values(thumb):
     with RH56Driver.mock() as hand:
-        with patch.object(hand._transport, "request") as request:
-            with pytest.raises(RH56ValidationError):
-                hand.move_finger(4, thumb, base="hold")
+        with (
+            patch.object(hand._transport, "request") as request,
+            pytest.raises(RH56ValidationError),
+        ):
+            hand.move_finger(4, thumb, base="hold")
         request.assert_not_called()
 
 
 def test_readiness_refreshes_device_faults_and_latches_stop():
     with RH56Driver.mock() as hand:
-        with patch.object(hand, "read_error", return_value=[1, 0, 0, 0, 0, 0]):
-            with pytest.raises(RH56HardwareError):
-                hand.check_motion_ready()
+        with (
+            patch.object(hand, "read_error", return_value=[1, 0, 0, 0, 0, 0]),
+            pytest.raises(RH56HardwareError),
+        ):
+            hand.check_motion_ready()
         with pytest.raises(RH56HardwareError):
             hand.move_to(RH56_OPEN_FRAME)
         hand.clear_error(settle_time=0)
@@ -164,24 +168,30 @@ def test_wait_uses_feedback_and_detects_faults():
     with RH56Driver.mock() as hand:
         with patch.object(hand, "read_angle", return_value=RH56_OPEN_FRAME):
             assert hand.wait_until_reached(RH56_OPEN_FRAME) == RH56_OPEN_FRAME
-        with patch.object(hand, "read_status", return_value=[6, 0, 0, 0, 0, 0]):
-            with pytest.raises(RH56HardwareError):
-                hand.wait_until_reached(RH56_OPEN_FRAME)
+        with (
+            patch.object(hand, "read_status", return_value=[6, 0, 0, 0, 0, 0]),
+            pytest.raises(RH56HardwareError),
+        ):
+            hand.wait_until_reached(RH56_OPEN_FRAME)
 
 
 def test_force_reached_status_is_not_angle_success():
-    with RH56Driver.mock() as hand:
-        with patch.object(hand, "read_status", return_value=[3] * 6):
-            with pytest.raises(RH56TimeoutError):
-                hand.wait_until_reached(RH56_OPEN_FRAME, timeout=0.002, interval=0.001)
+    with (
+        RH56Driver.mock() as hand,
+        patch.object(hand, "read_status", return_value=[3] * 6),
+        pytest.raises(RH56TimeoutError),
+    ):
+        hand.wait_until_reached(RH56_OPEN_FRAME, timeout=0.002, interval=0.001)
 
 
 def test_late_feedback_cannot_turn_an_expired_wait_into_success():
-    with RH56Driver.mock() as hand:
-        with patch.object(hand, "read_angle", return_value=RH56_OPEN_FRAME):
-            with patch("rh56_sdk.driver.time.monotonic", side_effect=[0.0, 0.0, 2.0]):
-                with pytest.raises(RH56TimeoutError):
-                    hand.wait_until_reached(RH56_OPEN_FRAME, timeout=1.0)
+    with (
+        RH56Driver.mock() as hand,
+        patch.object(hand, "read_angle", return_value=RH56_OPEN_FRAME),
+        patch("rh56_sdk.driver.time.monotonic", side_effect=[0.0, 0.0, 2.0]),
+        pytest.raises(RH56TimeoutError),
+    ):
+        hand.wait_until_reached(RH56_OPEN_FRAME, timeout=1.0)
 
 
 def test_stop_works_while_calibrating_and_checks_ack():
@@ -197,11 +207,13 @@ def test_stop_works_while_calibrating_and_checks_ack():
 def test_bad_write_ack_does_not_update_target_cache():
     with RH56Driver.mock() as hand:
         before = hand.commanded_angle
-        with patch.object(
-            RH56Protocol, "parse_write_ack", side_effect=RH56HardwareError("rejected")
+        with (
+            patch.object(
+                RH56Protocol, "parse_write_ack", side_effect=RH56HardwareError("rejected")
+            ),
+            pytest.raises(RH56HardwareError),
         ):
-            with pytest.raises(RH56HardwareError):
-                hand.move_to(RH56_OPEN_FRAME)
+            hand.move_to(RH56_OPEN_FRAME)
         assert hand.commanded_angle == before
 
 
@@ -239,27 +251,33 @@ def test_baseline_validation_can_apply_loaded_offset():
 
 def test_interrupted_calibration_preserves_exclusive_state():
     with RH56Driver.mock() as hand:
-        with patch("rh56_sdk.calibration.time.sleep", side_effect=KeyboardInterrupt):
-            with pytest.raises(KeyboardInterrupt):
-                ForceCalibration(hand).run_official(require_confirm=False)
+        with (
+            patch("rh56_sdk.calibration.time.sleep", side_effect=KeyboardInterrupt),
+            pytest.raises(KeyboardInterrupt),
+        ):
+            ForceCalibration(hand).run_official(require_confirm=False)
         assert hand.is_calibrating
         assert hand._calibration_busy_until is not None
 
 
 def test_uncertain_calibration_ack_preserves_exclusive_state():
     with RH56Driver.mock() as hand:
-        with patch.object(hand, "_write_u8", side_effect=RH56TimeoutError("no ACK")):
-            with pytest.raises(RH56TimeoutError):
-                ForceCalibration(hand).run_official(require_confirm=False)
+        with (
+            patch.object(hand, "_write_u8", side_effect=RH56TimeoutError("no ACK")),
+            pytest.raises(RH56TimeoutError),
+        ):
+            ForceCalibration(hand).run_official(require_confirm=False)
         assert hand.is_calibrating
 
 
 def test_calibration_rejects_fault_status_even_without_error_bits():
-    with RH56Driver.mock() as hand:
-        with patch("rh56_sdk.calibration.time.sleep"):
-            with patch.object(hand, "read_status", return_value=[6] * 6):
-                with pytest.raises(RH56HardwareError):
-                    ForceCalibration(hand).run_official(require_confirm=False)
+    with (
+        RH56Driver.mock() as hand,
+        patch("rh56_sdk.calibration.time.sleep"),
+        patch.object(hand, "read_status", return_value=[6] * 6),
+        pytest.raises(RH56HardwareError),
+    ):
+        ForceCalibration(hand).run_official(require_confirm=False)
 
 
 def test_calibration_profile_rejects_invalid_utf8(tmp_path):

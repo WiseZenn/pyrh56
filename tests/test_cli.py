@@ -5,8 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from rh56_sdk import RH56Driver, SerialPortInfo
-from rh56_sdk import cli
+from rh56_sdk import RH56Driver, SerialPortInfo, cli
 from rh56_sdk.constants import RH56_OPEN_FRAME
 from rh56_sdk.exceptions import RH56ConnectionError, RH56TimeoutError
 from rh56_sdk.transport import SerialTransport
@@ -74,9 +73,11 @@ def test_cli_close_selects_configured_lower_limit(capsys, option, thumb):
 
 def test_ports_enumerates_adapters_without_opening_any_device(capsys):
     adapter = SerialPortInfo("COM9", "USB RS485", "USB VID:PID=1234:5678", 0x1234, 0x5678)
-    with patch.object(SerialTransport, "list_port_info", return_value=[adapter]):
-        with patch.object(cli, "RH56Driver") as driver:
-            assert cli.main(["ports", "--json"]) == 0
+    with (
+        patch.object(SerialTransport, "list_port_info", return_value=[adapter]),
+        patch.object(cli, "RH56Driver") as driver,
+    ):
+        assert cli.main(["ports", "--json"]) == 0
     driver.assert_not_called()
     assert json.loads(capsys.readouterr().out)["data"]["ports"][0]["device"] == "COM9"
 
@@ -94,9 +95,11 @@ def test_json_adapter_names_are_portable_across_windows_pipe_encodings(capsys):
 
 def test_json_errors_are_portable_across_windows_pipe_encodings(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(hand, "connect", side_effect=RH56ConnectionError("串口被占用 🙂")):
-            assert cli.main(["ping", "--mock", "--json"]) == 3
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "connect", side_effect=RH56ConnectionError("串口被占用 🙂")),
+    ):
+        assert cli.main(["ping", "--mock", "--json"]) == 3
     output = capsys.readouterr().err
     assert json.loads(output.encode("gbk").decode("utf-8"))["error"]["message"] == "串口被占用 🙂"
 
@@ -144,24 +147,26 @@ def test_watch_has_exact_count_and_jsonl_records(capsys):
 
 def test_watch_retains_valid_records_when_later_read_fails(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(hand, "read_angle", side_effect=[[0] * 6, RH56TimeoutError("unplugged")]):
-            assert (
-                cli.main(
-                    [
-                        "watch",
-                        "--mock",
-                        "--count",
-                        "2",
-                        "--interval",
-                        "0.001",
-                        "--fields",
-                        "angle",
-                        "--jsonl",
-                    ]
-                )
-                == 4
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "read_angle", side_effect=[[0] * 6, RH56TimeoutError("unplugged")]),
+    ):
+        assert (
+            cli.main(
+                [
+                    "watch",
+                    "--mock",
+                    "--count",
+                    "2",
+                    "--interval",
+                    "0.001",
+                    "--fields",
+                    "angle",
+                    "--jsonl",
+                ]
             )
+            == 4
+        )
     captured = capsys.readouterr()
     assert len(captured.out.splitlines()) == 1
     assert json.loads(captured.err)["error"]["type"] == "RH56TimeoutError"
@@ -170,11 +175,13 @@ def test_watch_retains_valid_records_when_later_read_fails(capsys):
 
 def test_motion_preflight_fault_blocks_all_writes(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(hand, "read_error", return_value=[1, 0, 0, 0, 0, 0]):
-            with patch.object(hand, "move_to") as move:
-                with patch.object(hand, "stop_motion") as stop:
-                    assert cli.main(["open", "--mock", "--json"]) == 5
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "read_error", return_value=[1, 0, 0, 0, 0, 0]),
+        patch.object(hand, "move_to") as move,
+        patch.object(hand, "stop_motion") as stop,
+    ):
+        assert cli.main(["open", "--mock", "--json"]) == 5
     move.assert_not_called()
     stop.assert_not_called()
     assert capsys.readouterr().out == ""
@@ -182,9 +189,11 @@ def test_motion_preflight_fault_blocks_all_writes(capsys):
 
 def test_invalid_finger_target_does_not_write_or_stop(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(hand, "stop_motion") as stop:
-            assert cli.main(["finger", "index", "1001", "--mock", "--json"]) == 2
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "stop_motion") as stop,
+    ):
+        assert cli.main(["finger", "index", "1001", "--mock", "--json"]) == 2
     stop.assert_not_called()
     assert hand.last_command is None
     assert json.loads(capsys.readouterr().err)["error"]["exit_code"] == 2
@@ -192,11 +201,11 @@ def test_invalid_finger_target_does_not_write_or_stop(capsys):
 
 def test_stop_does_not_depend_on_angle_reads(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(
-            hand, "read_angle", side_effect=RH56TimeoutError("angle unavailable")
-        ) as read:
-            assert cli.main(["stop", "--mock", "--json"]) == 0
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "read_angle", side_effect=RH56TimeoutError("angle unavailable")) as read,
+    ):
+        assert cli.main(["stop", "--mock", "--json"]) == 0
     read.assert_not_called()
     assert json.loads(capsys.readouterr().out)["data"]["acknowledged"]
 
@@ -226,19 +235,23 @@ def test_mock_wait_does_not_claim_simulated_motion(capsys):
 
 def test_wait_reports_reached_only_after_actual_feedback(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(hand, "read_angle", return_value=RH56_OPEN_FRAME):
-            assert cli.main(["open", "--mock", "--wait", "--json"]) == 0
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "read_angle", return_value=RH56_OPEN_FRAME),
+    ):
+        assert cli.main(["open", "--mock", "--wait", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)["data"]
     assert data["reached"] is True and data["actual"] == RH56_OPEN_FRAME
 
 
 def test_motion_interrupt_attempts_stop_before_disconnect(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(hand, "wait_until_reached", side_effect=KeyboardInterrupt):
-            with patch.object(hand, "stop_motion", wraps=hand.stop_motion) as stop:
-                assert cli.main(["open", "--mock", "--wait", "--json"]) == 130
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "wait_until_reached", side_effect=KeyboardInterrupt),
+        patch.object(hand, "stop_motion", wraps=hand.stop_motion) as stop,
+    ):
+        assert cli.main(["open", "--mock", "--wait", "--json"]) == 130
     stop.assert_called_once()
     assert not hand.is_connected
     assert json.loads(capsys.readouterr().err)["recovery"]["zero_speed_acknowledged"]
@@ -246,20 +259,24 @@ def test_motion_interrupt_attempts_stop_before_disconnect(capsys):
 
 def test_read_only_interrupt_never_writes_a_stop(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(hand, "read_angle", side_effect=KeyboardInterrupt):
-            with patch.object(hand, "stop_motion") as stop:
-                assert cli.main(["watch", "--mock", "--jsonl"]) == 130
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "read_angle", side_effect=KeyboardInterrupt),
+        patch.object(hand, "stop_motion") as stop,
+    ):
+        assert cli.main(["watch", "--mock", "--jsonl"]) == 130
     stop.assert_not_called()
     assert json.loads(capsys.readouterr().err)["error"]["exit_code"] == 130
 
 
 def test_failed_stop_preserves_original_motion_error(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(hand, "move_to", side_effect=RH56TimeoutError("no ACK")):
-            with patch.object(hand, "stop_motion", side_effect=RH56ConnectionError("disconnected")):
-                assert cli.main(["open", "--mock", "--json"]) == 4
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "move_to", side_effect=RH56TimeoutError("no ACK")),
+        patch.object(hand, "stop_motion", side_effect=RH56ConnectionError("disconnected")),
+    ):
+        assert cli.main(["open", "--mock", "--json"]) == 4
     result = json.loads(capsys.readouterr().err)
     assert result["error"]["message"] == "no ACK"
     assert not result["recovery"]["zero_speed_acknowledged"]
@@ -267,9 +284,11 @@ def test_failed_stop_preserves_original_motion_error(capsys):
 
 def test_connection_error_is_structured_and_does_not_claim_device_response(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(hand, "connect", side_effect=RH56ConnectionError("port busy")):
-            assert cli.main(["ping", "--mock", "--json"]) == 3
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "connect", side_effect=RH56ConnectionError("port busy")),
+    ):
+        assert cli.main(["ping", "--mock", "--json"]) == 3
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["error"]["exit_code"] == 3
@@ -283,19 +302,23 @@ def test_doctor_explicit_mock_port_does_not_verify_physical_health(capsys):
 
 def test_doctor_connection_failure_reports_unverified_health(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(hand, "connect", side_effect=RH56ConnectionError("port busy")):
-            assert cli.main(["doctor", "--mock", "--json"]) == 3
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "connect", side_effect=RH56ConnectionError("port busy")),
+    ):
+        assert cli.main(["doctor", "--mock", "--json"]) == 3
     report = json.loads(capsys.readouterr().out)
     assert not report["ok"] and report["data"]["health_verified"] is False
 
 
 def test_doctor_continues_after_a_failed_field_and_reports_faults(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(hand, "read_angle", side_effect=RH56TimeoutError("no angle")):
-            with patch.object(hand, "read_error", return_value=[1, 0, 0, 0, 0, 0]):
-                assert cli.main(["doctor", "--mock", "--json"]) == 5
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "read_angle", side_effect=RH56TimeoutError("no angle")),
+        patch.object(hand, "read_error", return_value=[1, 0, 0, 0, 0, 0]),
+    ):
+        assert cli.main(["doctor", "--mock", "--json"]) == 5
     result = json.loads(capsys.readouterr().out)
     assert not result["ok"]
     checks = {check["name"]: check for check in result["data"]["checks"]}
@@ -305,9 +328,11 @@ def test_doctor_continues_after_a_failed_field_and_reports_faults(capsys):
 
 def test_finger_only_writes_selected_register_without_angle_reads(capsys):
     hand = RH56Driver.mock()
-    with patch.object(cli, "RH56Driver", return_value=hand):
-        with patch.object(hand, "read_angle", side_effect=RH56TimeoutError("unavailable")) as read:
-            assert cli.main(["finger", "index", "800", "--mock", "--json"]) == 0
+    with (
+        patch.object(cli, "RH56Driver", return_value=hand),
+        patch.object(hand, "read_angle", side_effect=RH56TimeoutError("unavailable")) as read,
+    ):
+        assert cli.main(["finger", "index", "800", "--mock", "--json"]) == 0
     read.assert_not_called()
     assert json.loads(capsys.readouterr().out)["data"]["target"] == [
         None,

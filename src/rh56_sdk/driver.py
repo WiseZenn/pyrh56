@@ -25,40 +25,50 @@ Read timeout & retry
 import logging
 import time
 import warnings
-from typing import Dict, List, Optional, Protocol, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Protocol, TypeVar
 
+from .configuration import RH56Config, _check_duration, _check_integer
 from .constants import (
     RH56_OPEN_FRAME,
     SERVO_COUNT,
 )
-from .configuration import RH56Config
 from .enums import Finger
-from .registers import (
-    REG_ANGLE_SET,
-    REG_FORCE_SET,
-    REG_SPEED_SET,
-    REG_VOLTAGE,
-    REG_ANGLE_ACT,
-    REG_POS_ACT,
-    REG_FORCE_ACT,
-    REG_CURRENT,
-    REG_ERROR,
-    REG_STATUS,
-    REG_TEMP,
-    REG_SAVE,
-    REG_CLEAR_ERROR,
-    STATUS_TEXT,
-    ERROR_BITS,
+from .exceptions import (
+    RH56BusyError,
+    RH56Error,
+    RH56HardwareError,
+    RH56NotConnectedError,
+    RH56ProtocolError,
+    RH56TimeoutError,
+    RH56ValidationError,
 )
 from .protocol import (
     RH56Protocol,
-    build_write_bytes_frame,
-    build_reg16_frame,
     build_read_reg16,
-    parse_read_response,
+    build_reg16_frame,
+    build_write_bytes_frame,
     parse_i16_le,
-    parse_u16_le,
+    parse_read_response,
     parse_u8,
+    parse_u16_le,
+)
+from .registers import (
+    ERROR_BITS,
+    REG_ANGLE_ACT,
+    REG_ANGLE_SET,
+    REG_CLEAR_ERROR,
+    REG_CURRENT,
+    REG_ERROR,
+    REG_FORCE_ACT,
+    REG_FORCE_SET,
+    REG_POS_ACT,
+    REG_SAVE,
+    REG_SPEED_SET,
+    REG_STATUS,
+    REG_TEMP,
+    REG_VOLTAGE,
+    STATUS_TEXT,
 )
 from .safety import (
     make_safe_close_frame,
@@ -67,19 +77,12 @@ from .safety import (
     normalize_angle_targets,
     normalize_u16_vector,
 )
-from .configuration import _check_duration, _check_integer
 from .transport import SerialTransport
-from .exceptions import (
-    RH56BusyError,
-    RH56Error,
-    RH56NotConnectedError,
-    RH56ProtocolError,
-    RH56HardwareError,
-    RH56TimeoutError,
-    RH56ValidationError,
-)
 
 logger = logging.getLogger(__name__)
+
+_DriverT = TypeVar("_DriverT", bound="RH56Driver")
+
 
 class TransportProtocol(Protocol):
     _port: str
@@ -143,9 +146,9 @@ class RH56Driver:
         )
 
         # Track last-set target frame for incremental move_finger
-        self._last_commanded_angle: List[int] = list(RH56_OPEN_FRAME)
-        self._last_actual_angle: Optional[List[int]] = None
-        self._current_frame: List[int] = self._last_commanded_angle
+        self._last_commanded_angle: list[int] = list(RH56_OPEN_FRAME)
+        self._last_actual_angle: list[int] | None = None
+        self._current_frame: list[int] = self._last_commanded_angle
 
         # Read fault-tolerance state
         self._miss_count: int = 0
@@ -155,17 +158,17 @@ class RH56Driver:
         self._safe_stop: bool = False
 
         # Runtime diagnostics state for closed-loop tests and CLI panels.
-        self.last_command: Optional[Dict[str, object]] = None
-        self.last_feedback: Dict[str, object] = {}
-        self.last_read_time: Optional[float] = None
-        self.last_error: Optional[str] = None
+        self.last_command: dict[str, object] | None = None
+        self.last_feedback: dict[str, object] = {}
+        self.last_read_time: float | None = None
+        self.last_error: str | None = None
 
         # Calibration state. Official force calibration is exclusive because
         # the hand moves automatically for about six seconds.
         self.is_calibrating: bool = False
-        self._calibration_busy_until: Optional[float] = None
-        self.last_calibration_time: Optional[float] = None
-        self.force_zero_offset: List[int] = [0] * SERVO_COUNT
+        self._calibration_busy_until: float | None = None
+        self.last_calibration_time: float | None = None
+        self.force_zero_offset: list[int] = [0] * SERVO_COUNT
 
     @classmethod
     def mock(cls) -> "RH56Driver":
@@ -250,8 +253,7 @@ class RH56Driver:
                 return actual
             time.sleep(min(interval, remaining))
         raise RH56TimeoutError(
-            f"Motion did not reach target within {timeout}s: "
-            f"target={expected}, actual={actual}"
+            f"Motion did not reach target within {timeout}s: target={expected}, actual={actual}"
         )
 
     # ==================================================================
@@ -290,9 +292,7 @@ class RH56Driver:
             )
         self._refresh_calibration_state()
         if self.is_calibrating:
-            raise RH56BusyError(
-                "RH56 is calibrating; motion command rejected."
-            )
+            raise RH56BusyError("RH56 is calibrating; motion command rejected.")
         if self._safe_stop:
             raise RH56HardwareError(
                 "Safe stop is active because hardware status reported a fault. "
@@ -317,7 +317,7 @@ class RH56Driver:
     def move_finger(
         self,
         finger_index: Finger | int,
-        value: int | float,
+        value: float,
         *,
         base: str = "last_command",
     ) -> None:
@@ -337,8 +337,7 @@ class RH56Driver:
         finger = int(finger_index)
         if finger < 0 or finger >= SERVO_COUNT:
             raise RH56ValidationError(
-                f"Finger index out of range: {finger}, "
-                f"valid range [0, {SERVO_COUNT - 1}]"
+                f"Finger index out of range: {finger}, valid range [0, {SERVO_COUNT - 1}]"
             )
         frame: list[int | float]
         if base == "hold":
@@ -385,7 +384,7 @@ class RH56Driver:
     # ==================================================================
     #  Angle feedback (recommended: same coordinate space as move_to)
     # ==================================================================
-    def read_angle(self) -> List[int]:
+    def read_angle(self) -> list[int]:
         """Read actual angle ANGLE_ACT (6 short, range 0-1000).
 
         This is the preferred feedback for closed-loop control because
@@ -400,7 +399,7 @@ class RH56Driver:
     # ==================================================================
     #  Actuator position feedback
     # ==================================================================
-    def read_actuator_position(self) -> List[int]:
+    def read_actuator_position(self) -> list[int]:
         """Read actuator actual position POS_ACT (6 short, range 0-2000)."""
         data = self._read_reg16(REG_POS_ACT, count=6)
         values = parse_u16_le(data, count=6)
@@ -408,14 +407,13 @@ class RH56Driver:
         return values
 
     # Deprecated -- kept for backward compatibility
-    def read_position(self) -> List[int]:
+    def read_position(self) -> list[int]:
         """Deprecated: use ``read_angle()`` or ``read_actuator_position()``.
 
         Defaults to ANGLE_ACT (0-1000).
         """
         warnings.warn(
-            "read_position() is deprecated. Use read_angle() or "
-            "read_actuator_position() instead.",
+            "read_position() is deprecated. Use read_angle() or read_actuator_position() instead.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -424,7 +422,7 @@ class RH56Driver:
     # ==================================================================
     #  Force / current / voltage feedback
     # ==================================================================
-    def read_force(self) -> List[int]:
+    def read_force(self) -> list[int]:
         """Read actual force FORCE_ACT (6 signed shorts).
 
         Small negative values like -1, -5 may appear when unloaded;
@@ -435,7 +433,7 @@ class RH56Driver:
         self._record_feedback("force", values)
         return values
 
-    def read_current(self) -> List[int]:
+    def read_current(self) -> list[int]:
         """Read current CURRENT (6 short, unit mA)."""
         data = self._read_reg16(REG_CURRENT, count=6)
         values = parse_u16_le(data, count=6)
@@ -452,7 +450,7 @@ class RH56Driver:
     # ==================================================================
     #  Status / error / temperature feedback (byte arrays)
     # ==================================================================
-    def read_status(self) -> List[int]:
+    def read_status(self) -> list[int]:
         """Read status codes STATUS (6 bytes).
 
         Per-finger meaning: see ``STATUS_TEXT``.
@@ -463,7 +461,7 @@ class RH56Driver:
         self._update_safe_stop_from_status(values)
         return values
 
-    def read_error(self) -> List[int]:
+    def read_error(self) -> list[int]:
         """Read error codes ERROR (6 bytes).
 
         Per-finger bit meanings: see ``ERROR_BITS``.
@@ -476,7 +474,7 @@ class RH56Driver:
             self.last_error = f"Hardware error bits reported: {values}"
         return values
 
-    def read_temperature(self) -> List[int]:
+    def read_temperature(self) -> list[int]:
         """Read temperature TEMP (6 bytes, unit degC)."""
         data = self._read_bytes(REG_TEMP, length=6)
         values = parse_u8(data, count=6)
@@ -486,7 +484,7 @@ class RH56Driver:
     # ==================================================================
     #  Composite feedback
     # ==================================================================
-    def read_feedback(self) -> Dict[str, List[int]]:
+    def read_feedback(self) -> dict[str, list[int]]:
         """Read all feedback registers at once.
 
         Note: this issues 7 independent read requests. Suitable for
@@ -507,19 +505,15 @@ class RH56Driver:
     #  Status / error decoding helpers
     # ==================================================================
     @staticmethod
-    def decode_status(status_byte: int) -> Tuple[int, str]:
+    def decode_status(status_byte: int) -> tuple[int, str]:
         """Decode a single-finger status byte to (code, description)."""
         text = STATUS_TEXT.get(status_byte, f"Unknown status ({status_byte})")
         return status_byte, text
 
     @staticmethod
-    def decode_error(error_byte: int) -> List[str]:
+    def decode_error(error_byte: int) -> list[str]:
         """Decode a single-finger error byte to a list of fault names."""
-        return [
-            name
-            for bit, name in ERROR_BITS.items()
-            if error_byte & (1 << bit)
-        ]
+        return [name for bit, name in ERROR_BITS.items() if error_byte & (1 << bit)]
 
     @staticmethod
     def has_error(error_byte: int) -> bool:
@@ -543,8 +537,7 @@ class RH56Driver:
         if any(errors) or any(code in {5, 6, 7} for code in status):
             self._safe_stop = True
             self.last_error = (
-                f"Hardware fault remains after clear_error: "
-                f"errors={errors}, status={status}"
+                f"Hardware fault remains after clear_error: errors={errors}, status={status}"
             )
             raise RH56HardwareError(self.last_error)
 
@@ -585,7 +578,7 @@ class RH56Driver:
             require_confirm=require_confirm,
         )
 
-    def read_calibration_snapshot(self) -> Dict[str, object]:
+    def read_calibration_snapshot(self) -> dict[str, object]:
         """Deprecated: use ``RH56Diagnostics(hand).read_calibration_snapshot()``."""
         warnings.warn(
             "read_calibration_snapshot() moved to RH56Diagnostics.",
@@ -601,7 +594,7 @@ class RH56Driver:
         samples: int = 20,
         tolerance: int = 30,
         interval: float = 0.02,
-    ) -> Dict[str, object]:
+    ) -> dict[str, object]:
         """Deprecated: use ``ForceCalibration(hand).validate_baseline(...)``."""
         warnings.warn(
             "validate_force_zero() moved to ForceCalibration.validate_baseline().",
@@ -620,7 +613,7 @@ class RH56Driver:
         self,
         samples: int = 50,
         interval: float = 0.02,
-    ) -> List[int]:
+    ) -> list[int]:
         """Deprecated: use ``ForceCalibration(hand).measure_baseline(...)``."""
         warnings.warn(
             "calibrate_force_zero_offset() moved to ForceCalibration.measure_baseline().",
@@ -634,7 +627,7 @@ class RH56Driver:
             interval=interval,
         )
 
-    def get_force_net(self) -> List[int]:
+    def get_force_net(self) -> list[int]:
         """Deprecated: use ``ForceCalibration(hand).get_net_force()``."""
         warnings.warn(
             "get_force_net() moved to ForceCalibration.get_net_force().",
@@ -647,14 +640,14 @@ class RH56Driver:
 
     def characterize_angle_tracking(
         self,
-        points: Optional[Sequence[int]] = None,
-        fingers: Optional[Sequence[int]] = None,
+        points: Sequence[int] | None = None,
+        fingers: Sequence[int] | None = None,
         tolerance: int = 30,
         timeout: float = 2.0,
         dwell: float = 0.05,
-        speed: Optional[int] = None,
+        speed: int | None = None,
         require_confirm: bool = True,
-    ) -> Dict[str, object]:
+    ) -> dict[str, object]:
         """Deprecated: use ``RH56Diagnostics(hand).characterize_angle_tracking()``."""
         warnings.warn(
             "characterize_angle_tracking() moved to RH56Diagnostics.",
@@ -700,9 +693,7 @@ class RH56Driver:
                 "recover_open_unchecked() bypasses validation; pass confirm=True"
             )
         logger.warning("Sending unchecked recovery open command")
-        self._transport.write(
-            build_reg16_frame(self._node_id, REG_ANGLE_SET, RH56_OPEN_FRAME)
-        )
+        self._transport.write(build_reg16_frame(self._node_id, REG_ANGLE_SET, RH56_OPEN_FRAME))
         self._last_commanded_angle = list(RH56_OPEN_FRAME)
         self._current_frame = self._last_commanded_angle
 
@@ -744,13 +735,13 @@ class RH56Driver:
         return self._safe_stop
 
     @property
-    def feedback_age(self) -> Optional[float]:
+    def feedback_age(self) -> float | None:
         """Seconds since the last successful feedback read, or None if never read."""
         if self.last_read_time is None:
             return None
         return time.time() - self.last_read_time
 
-    def synchronize_command_state(self) -> List[int]:
+    def synchronize_command_state(self) -> list[int]:
         """Sync the incremental command cache from ANGLE_ACT."""
         actual = self.read_angle()
         self._last_commanded_angle = list(actual)
@@ -784,23 +775,23 @@ class RH56Driver:
         register_length = count * 2
         request_frame = build_read_reg16(self._node_id, addr, register_length)
 
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         for attempt in range(1 + self._config.retry.retries):
             try:
                 response = self._transport.request(
                     request_frame,
                     timeout=self._config.request_timeout,
                 )
-                data = parse_read_response(
-                    response, self._node_id, addr, register_length
-                )
+                data = parse_read_response(response, self._node_id, addr, register_length)
                 self._record_read_success()
                 return data
             except (RH56TimeoutError, RH56ProtocolError) as exc:
                 last_exc = exc
                 logger.debug(
                     "Read reg 0x%04X attempt %d failed: %s",
-                    addr, attempt + 1, exc,
+                    addr,
+                    attempt + 1,
+                    exc,
                 )
                 if attempt < self._config.retry.retries:
                     time.sleep(self._config.retry.retry_delay)
@@ -821,23 +812,23 @@ class RH56Driver:
         """
         request_frame = build_read_reg16(self._node_id, addr, length)
 
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         for attempt in range(1 + self._config.retry.retries):
             try:
                 response = self._transport.request(
                     request_frame,
                     timeout=self._config.request_timeout,
                 )
-                data = parse_read_response(
-                    response, self._node_id, addr, length
-                )
+                data = parse_read_response(response, self._node_id, addr, length)
                 self._record_read_success()
                 return data
             except (RH56TimeoutError, RH56ProtocolError) as exc:
                 last_exc = exc
                 logger.debug(
                     "Read bytes 0x%04X attempt %d failed: %s",
-                    addr, attempt + 1, exc,
+                    addr,
+                    attempt + 1,
+                    exc,
                 )
                 if attempt < self._config.retry.retries:
                     time.sleep(self._config.retry.retry_delay)
@@ -854,7 +845,7 @@ class RH56Driver:
     def _write_reg16(
         self,
         addr: int,
-        data: List[int],
+        data: list[int],
         wait_ack: bool = True,
         *,
         allow_while_calibrating: bool = False,
@@ -869,9 +860,7 @@ class RH56Driver:
             Serial port not connected.
         """
         if addr is None:
-            raise RH56ValidationError(
-                "Register address is None; check registers.py configuration"
-            )
+            raise RH56ValidationError("Register address is None; check registers.py configuration")
         if not self.is_connected:
             raise RH56NotConnectedError("Serial port not connected")
         self._refresh_calibration_state()
@@ -899,9 +888,7 @@ class RH56Driver:
     def _write_u8(self, addr: int, value: int, wait_ack: bool = True) -> None:
         """Write one byte to a maintenance register."""
         if addr is None:
-            raise RH56ValidationError(
-                "Register address is None; check registers.py configuration"
-            )
+            raise RH56ValidationError("Register address is None; check registers.py configuration")
         if not self.is_connected:
             raise RH56NotConnectedError("Serial port not connected")
         if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 0xFF:
@@ -930,7 +917,7 @@ class RH56Driver:
     #  Internal: parameter validation
     # ==================================================================
     @staticmethod
-    def _validate_servo_list(values: List[int], label: str) -> None:
+    def _validate_servo_list(values: list[int], label: str) -> None:
         """Validate length and basic type of a 6-element servo parameter list."""
         if len(values) != SERVO_COUNT:
             raise RH56ValidationError(
@@ -938,9 +925,7 @@ class RH56Driver:
             )
         for i, v in enumerate(values):
             if not isinstance(v, (int, float)):
-                raise RH56ValidationError(
-                    f"{label}[{i}] type error: {type(v).__name__}"
-                )
+                raise RH56ValidationError(f"{label}[{i}] type error: {type(v).__name__}")
 
     # ==================================================================
     #  Internal: diagnostic and safety state
@@ -952,7 +937,7 @@ class RH56Driver:
         if self.last_error and self.last_error.startswith("Read failed"):
             self.last_error = None
 
-    def _record_read_failure(self, exc: Optional[Exception]) -> None:
+    def _record_read_failure(self, exc: Exception | None) -> None:
         self._miss_count += 1
         self.last_error = f"Read failed: {exc}"
         if self._miss_count >= self._max_miss_before_fault:
@@ -962,7 +947,7 @@ class RH56Driver:
         self.last_feedback[key] = value
         self.last_read_time = time.time()
 
-    def _update_safe_stop_from_status(self, status: List[int]) -> None:
+    def _update_safe_stop_from_status(self, status: list[int]) -> None:
         fault_codes = {5, 6, 7}
         if any(code in fault_codes for code in status):
             self._safe_stop = True
@@ -984,18 +969,14 @@ class RH56Driver:
     # ==================================================================
     #  Context manager
     # ==================================================================
-    def __enter__(self) -> "RH56Driver":
+    def __enter__(self: _DriverT) -> _DriverT:
         self.connect()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.disconnect()
-        return None
 
     def __repr__(self) -> str:
         status = "connected" if self.is_connected else "disconnected"
         stale = ", stale" if self.is_stale else ""
-        return (
-            f"<RH56Driver port={self._transport._port} "
-            f"node={self._node_id} {status}{stale}>"
-        )
+        return f"<RH56Driver port={self._transport._port} node={self._node_id} {status}{stale}>"

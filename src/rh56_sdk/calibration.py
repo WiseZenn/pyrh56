@@ -8,12 +8,12 @@ import time
 from pathlib import Path
 from typing import Any, Protocol
 
-from .constants import SERVO_COUNT
 from .configuration import _check_duration, _check_integer
+from .constants import SERVO_COUNT
 from .exceptions import RH56BusyError, RH56CalibrationError, RH56ValidationError
 from .registers import REG_GESTURE_FORCE_CLB
 
-__all__ = ["ForceCalibration", "ForceCalibrationProfile", "CalibrationDriver"]
+__all__ = ["CalibrationDriver", "ForceCalibration", "ForceCalibrationProfile"]
 
 
 class CalibrationDriver(Protocol):
@@ -63,9 +63,7 @@ class ForceCalibration:
 
         errors_before = hand.read_error()
         if any(errors_before):
-            raise RH56CalibrationError(
-                f"Cannot calibrate while error exists: {errors_before}"
-            )
+            raise RH56CalibrationError(f"Cannot calibrate while error exists: {errors_before}")
 
         started = False
         hand.is_calibrating = True
@@ -104,7 +102,7 @@ class ForceCalibration:
         """Record software-side unloaded FORCE_ACT baseline."""
         force_samples = self._sample_force(samples, interval)
         channels = list(zip(*force_samples))
-        offset = [int(round(statistics.median(ch))) for ch in channels]
+        offset = [round(statistics.median(ch)) for ch in channels]
         self._hand.force_zero_offset = offset
         self._hand.last_calibration_time = time.time()
         return list(offset)
@@ -126,7 +124,7 @@ class ForceCalibration:
                 for row in force_samples
             ]
         channels = list(zip(*force_samples))
-        median = [int(round(statistics.median(ch))) for ch in channels]
+        median = [round(statistics.median(ch)) for ch in channels]
         maximum_abs = [max(abs(v) for v in ch) for ch in channels]
         std = [statistics.pstdev(ch) if len(ch) > 1 else 0.0 for ch in channels]
         ok = all(abs(v) <= tolerance for v in median)

@@ -2,10 +2,8 @@ import argparse
 import csv
 import time
 
-
 from rh56_sdk import RH56Driver
 from rh56_sdk.constants import RH56_OPEN_FRAME
-
 
 FAULT_STATUS = {5, 6, 7}
 
@@ -43,9 +41,7 @@ def _wait_until_reached(hand, index, target, tolerance, timeout):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Low-speed single-finger move and readback test."
-    )
+    parser = argparse.ArgumentParser(description="Low-speed single-finger move and readback test.")
     parser.add_argument("--port", default="COM7")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--finger", type=int, default=3, help="0-5, default index finger")

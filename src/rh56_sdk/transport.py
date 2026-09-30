@@ -10,7 +10,6 @@ Supports
 import logging
 import threading
 import time
-from typing import List, Optional
 
 try:
     import serial
@@ -26,8 +25,8 @@ from .exceptions import (
     RH56NotConnectedError,
     RH56TimeoutError,
 )
-from .protocol import RH56Protocol
 from .models import SerialPortInfo
+from .protocol import RH56Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -77,20 +76,18 @@ class SerialTransport:
     ...     transport.write(frame)
     """
 
-    def __init__(
-        self, port: str, baud: int = 115200, timeout: float = 0.1
-    ) -> None:
+    def __init__(self, port: str, baud: int = 115200, timeout: float = 0.1) -> None:
         self._port = port
         self._baud = baud
         self._timeout = timeout
-        self._ser = None  # type: Optional[serial.Serial]
+        self._ser: serial.Serial | MockSerial | None = None
         self._transaction_lock = threading.RLock()
 
     # ------------------------------------------------------------------
     #  Port enumeration
     # ------------------------------------------------------------------
     @staticmethod
-    def list_ports() -> List[str]:
+    def list_ports() -> list[str]:
         """Return real serial port names; Mock must be selected explicitly."""
         return [port.device for port in SerialTransport.list_port_info()]
 
@@ -133,7 +130,7 @@ class SerialTransport:
     # ------------------------------------------------------------------
     #  Connection management
     # ------------------------------------------------------------------
-    def connect(self, port: Optional[str] = None, baud: Optional[int] = None) -> None:
+    def connect(self, port: str | None = None, baud: int | None = None) -> None:
         """Open the serial port. Optional args override constructor defaults."""
         if port is not None:
             self._port = port
@@ -152,14 +149,10 @@ class SerialTransport:
             raise ImportError("pyserial is not installed. Run: pip install pyserial")
 
         try:
-            self._ser = serial.Serial(
-                self._port, self._baud, timeout=self._timeout
-            )
+            self._ser = serial.Serial(self._port, self._baud, timeout=self._timeout)
             logger.info("Connected to %s @ %d baud", self._port, self._baud)
         except serial.SerialException as exc:
-            raise RH56ConnectionError(
-                f"Failed to open serial port {self._port}: {exc}"
-            ) from exc
+            raise RH56ConnectionError(f"Failed to open serial port {self._port}: {exc}") from exc
 
     def disconnect(self) -> None:
         """Close the serial port."""
@@ -168,7 +161,7 @@ class SerialTransport:
                 try:
                     self._ser.close()
                 except Exception:
-                    pass
+                    logger.debug("Failed to close serial port", exc_info=True)
                 finally:
                     self._ser = None
                     logger.info("Disconnected")
@@ -194,11 +187,9 @@ class SerialTransport:
         except (RH56ConnectionError, RH56NotConnectedError):
             raise
         except Exception as exc:
-            raise RH56ConnectionError(
-                f"Serial write failed on {self._port}: {exc}"
-            ) from exc
+            raise RH56ConnectionError(f"Serial write failed on {self._port}: {exc}") from exc
 
-    def read(self, size: int, timeout: Optional[float] = None) -> bytes:
+    def read(self, size: int, timeout: float | None = None) -> bytes:
         """Read *size* bytes from the serial port."""
         if not self._ser:
             raise RH56NotConnectedError("Serial port not connected")
@@ -210,23 +201,19 @@ class SerialTransport:
         try:
             data = self._ser.read(size)
             if len(data) < size:
-                logger.warning(
-                    "Short read: expected %d bytes, got %d", size, len(data)
-                )
+                logger.warning("Short read: expected %d bytes, got %d", size, len(data))
             return data
         except (RH56ConnectionError, RH56NotConnectedError):
             raise
         except Exception as exc:
-            raise RH56ConnectionError(
-                f"Serial read failed on {self._port}: {exc}"
-            ) from exc
+            raise RH56ConnectionError(f"Serial read failed on {self._port}: {exc}") from exc
         finally:
             self._ser.timeout = original_timeout
 
     # ------------------------------------------------------------------
     #  Request-response (protocol-aware)
     # ------------------------------------------------------------------
-    def request(self, frame: bytes, timeout: Optional[float] = None) -> bytes:
+    def request(self, frame: bytes, timeout: float | None = None) -> bytes:
         """Send a request frame and read the complete response.
 
         - Mock mode: synthesizes a valid zero-data response from the request.
@@ -258,9 +245,9 @@ class SerialTransport:
             try:
                 reset()
             except Exception as exc:
-                logger.debug("Failed to clear input buffer: %s", exc)
+                logger.debug("Failed to clear input buffer: %s", exc, exc_info=True)
 
-    def read_response_frame(self, timeout: Optional[float] = None) -> bytes:
+    def read_response_frame(self, timeout: float | None = None) -> bytes:
         """Read one complete RH56 response frame from the serial stream.
 
         The reader scans byte-by-byte until it finds the response header
@@ -316,8 +303,7 @@ class SerialTransport:
                 data.extend(chunk)
         if len(data) != size:
             raise RH56TimeoutError(
-                f"Timed out reading response frame: expected {size} bytes, "
-                f"got {len(data)}"
+                f"Timed out reading response frame: expected {size} bytes, got {len(data)}"
             )
         return bytes(data)
 
@@ -335,9 +321,7 @@ class SerialTransport:
         except (RH56ConnectionError, RH56NotConnectedError):
             raise
         except Exception as exc:
-            raise RH56ConnectionError(
-                f"Serial read failed on {self._port}: {exc}"
-            ) from exc
+            raise RH56ConnectionError(f"Serial read failed on {self._port}: {exc}") from exc
         finally:
             self._ser.timeout = original_timeout
 
@@ -348,8 +332,7 @@ class SerialTransport:
         actual = frame[-1]
         if actual != expected:
             raise RH56ChecksumError(
-                f"Checksum mismatch: computed 0x{expected:02X}, "
-                f"received 0x{actual:02X}"
+                f"Checksum mismatch: computed 0x{expected:02X}, received 0x{actual:02X}"
             )
 
     def _flush_output(self) -> None:
@@ -358,7 +341,7 @@ class SerialTransport:
             try:
                 flush()
             except Exception as exc:
-                logger.debug("Failed to flush serial output: %s", exc)
+                logger.debug("Failed to flush serial output: %s", exc, exc_info=True)
 
     # ------------------------------------------------------------------
     #  Mock response synthesis

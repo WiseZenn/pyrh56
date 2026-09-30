@@ -18,7 +18,6 @@ Frame Format
 """
 
 from collections.abc import Sequence
-from typing import List, Tuple
 
 from .exceptions import (
     RH56ChecksumError,
@@ -32,12 +31,12 @@ class RH56Protocol:
 
     # Frame headers: request and response headers are reversed.
     # Do not mix them up during parsing.
-    HEADER_REQ = bytes([0xEB, 0x90])   # Host -> RH56
+    HEADER_REQ = bytes([0xEB, 0x90])  # Host -> RH56
     HEADER_RESP = bytes([0x90, 0xEB])  # RH56 -> Host
 
     # Command bytes: 0x11 reads registers, 0x12 writes registers
     # in the RH56 private protocol.
-    CMD_READ = 0x11   # RS232/RS485 private protocol read register
+    CMD_READ = 0x11  # RS232/RS485 private protocol read register
     CMD_WRITE = 0x12  # RS232/RS485 private protocol write register
     MAX_WRITE_BYTE_PAYLOAD = 252
     MAX_REG16_WRITE_COUNT = 126
@@ -61,9 +60,7 @@ class RH56Protocol:
     @staticmethod
     def validate_u16_value(value: int) -> int:
         if isinstance(value, bool) or not isinstance(value, int):
-            raise RH56ProtocolError(
-                f"u16 register value must be int, got {type(value).__name__}"
-            )
+            raise RH56ProtocolError(f"u16 register value must be int, got {type(value).__name__}")
         if not 0 <= value <= 0xFFFF:
             raise RH56ProtocolError(f"u16 register value out of range: {value}")
         return value
@@ -104,8 +101,7 @@ class RH56Protocol:
             raise RH56ProtocolError("reg16 payload must not be empty")
         if len(data) > RH56Protocol.MAX_REG16_WRITE_COUNT:
             raise RH56ProtocolError(
-                f"reg16 payload too long: {len(data)}, "
-                f"maximum={RH56Protocol.MAX_REG16_WRITE_COUNT}"
+                f"reg16 payload too long: {len(data)}, maximum={RH56Protocol.MAX_REG16_WRITE_COUNT}"
             )
 
         # Register address and 16-bit data are little-endian:
@@ -117,10 +113,7 @@ class RH56Protocol:
 
         # Len = CMD + Payload length, excluding header, ID, Len itself,
         # and checksum.
-        body = (
-            bytes([node_id, len(payload) + 1, RH56Protocol.CMD_WRITE])
-            + bytes(payload)
-        )
+        body = bytes([node_id, len(payload) + 1, RH56Protocol.CMD_WRITE]) + bytes(payload)
         return RH56Protocol.HEADER_REQ + body + bytes([RH56Protocol.checksum(body)])
 
     @staticmethod
@@ -142,10 +135,7 @@ class RH56Protocol:
         addr = RH56Protocol.validate_address(addr)
         payload = bytearray([addr & 0xFF, (addr >> 8) & 0xFF])
         payload.extend(data)
-        body = (
-            bytes([node_id, len(payload) + 1, RH56Protocol.CMD_WRITE])
-            + bytes(payload)
-        )
+        body = bytes([node_id, len(payload) + 1, RH56Protocol.CMD_WRITE]) + bytes(payload)
         return RH56Protocol.HEADER_REQ + body + bytes([RH56Protocol.checksum(body)])
 
     # ==================================================================
@@ -235,22 +225,18 @@ class RH56Protocol:
         # Header
         if response[0] != 0x90 or response[1] != 0xEB:
             raise RH56FrameError(
-                f"Invalid response header: expected 90 EB, "
-                f"got {response[0]:02X} {response[1]:02X}"
+                f"Invalid response header: expected 90 EB, got {response[0]:02X} {response[1]:02X}"
             )
 
         # Node ID
         if response[2] != node_id:
-            raise RH56FrameError(
-                f"Node ID mismatch: expected {node_id}, got {response[2]}"
-            )
+            raise RH56FrameError(f"Node ID mismatch: expected {node_id}, got {response[2]}")
 
         # Length field
         expected_len_field = register_length + 3
         if response[3] != expected_len_field:
             raise RH56FrameError(
-                f"Length field mismatch: expected {expected_len_field}, "
-                f"got {response[3]}"
+                f"Length field mismatch: expected {expected_len_field}, got {response[3]}"
             )
 
         # Command byte
@@ -266,8 +252,7 @@ class RH56Protocol:
         resp_addr = response[5] | (response[6] << 8)
         if resp_addr != addr:
             raise RH56FrameError(
-                f"Response address mismatch: expected 0x{addr:04X}, "
-                f"got 0x{resp_addr:04X}"
+                f"Response address mismatch: expected 0x{addr:04X}, got 0x{resp_addr:04X}"
             )
 
         # Checksum
@@ -275,8 +260,7 @@ class RH56Protocol:
         actual_cs = response[-1]
         if actual_cs != expected_cs:
             raise RH56ChecksumError(
-                f"Checksum mismatch: computed 0x{expected_cs:02X}, "
-                f"received 0x{actual_cs:02X}"
+                f"Checksum mismatch: computed 0x{expected_cs:02X}, received 0x{actual_cs:02X}"
             )
 
         # Data: skip [90 EB ID Len CMD Addr_L Addr_H] = 7 header bytes
@@ -307,8 +291,7 @@ class RH56Protocol:
 
         if len(response) != expected_len:
             raise RH56FrameError(
-                f"Write ACK length mismatch: expected {expected_len}, "
-                f"got {len(response)}"
+                f"Write ACK length mismatch: expected {expected_len}, got {len(response)}"
             )
 
         if response[0] != 0x90 or response[1] != 0xEB:
@@ -332,8 +315,7 @@ class RH56Protocol:
         result = response[7]
         if result != 0x01:
             raise RH56ProtocolError(
-                f"Write rejected by RH56: address=0x{addr:04X}, "
-                f"result=0x{result:02X}"
+                f"Write rejected by RH56: address=0x{addr:04X}, result=0x{result:02X}"
             )
 
         expected_cs = sum(response[2:-1]) & 0xFF
@@ -346,7 +328,7 @@ class RH56Protocol:
     #  Generic response parser (backward-compatible)
     # ==================================================================
     @staticmethod
-    def parse_response(response: bytes) -> Tuple[int, int, List[int]]:
+    def parse_response(response: bytes) -> tuple[int, int, list[int]]:
         """Generic response frame parser.
 
         Returns ``(node_id, cmd, values)`` where values is a list of 16-bit ints.
@@ -361,9 +343,7 @@ class RH56Protocol:
             (response[0] == 0xEB and response[1] == 0x90)
             or (response[0] == 0x90 and response[1] == 0xEB)
         ):
-            raise RH56FrameError(
-                f"Invalid header: {response[0]:02X} {response[1]:02X}"
-            )
+            raise RH56FrameError(f"Invalid header: {response[0]:02X} {response[1]:02X}")
 
         node_id = response[2]
         length = response[3]
@@ -378,9 +358,7 @@ class RH56Protocol:
         expected = sum(response[2:checksum_index]) & 0xFF
         actual = response[checksum_index]
         if expected != actual:
-            raise RH56ChecksumError(
-                f"Checksum: computed 0x{expected:02X}, received 0x{actual:02X}"
-            )
+            raise RH56ChecksumError(f"Checksum: computed 0x{expected:02X}, received 0x{actual:02X}")
 
         # The generic parser does not validate address semantics.
         # It converts bytes after CMD to unsigned 16-bit integers (LE).
@@ -392,9 +370,9 @@ class RH56Protocol:
     #  Value decoders
     # ==================================================================
     @staticmethod
-    def parse_reg16_values(data: bytes) -> List[int]:
+    def parse_reg16_values(data: bytes) -> list[int]:
         """Decode byte sequence into unsigned 16-bit integers (LE)."""
-        values: List[int] = []
+        values: list[int] = []
         for i in range(0, len(data) - 1, 2):
             # Combine two bytes into an unsigned 16-bit integer:
             # low byte | high byte << 8.
@@ -402,7 +380,7 @@ class RH56Protocol:
         return values
 
     @staticmethod
-    def parse_u16_le(data: bytes, count: int = 6) -> List[int]:
+    def parse_u16_le(data: bytes, count: int = 6) -> list[int]:
         """Parse unsigned 16-bit little-endian array.
 
         Raises
@@ -416,7 +394,7 @@ class RH56Protocol:
         return [data[2 * i] | (data[2 * i + 1] << 8) for i in range(count)]
 
     @staticmethod
-    def parse_i16_le(data: bytes, count: int = 6) -> List[int]:
+    def parse_i16_le(data: bytes, count: int = 6) -> list[int]:
         """Parse signed 16-bit little-endian array (supports -1 etc.)."""
         expected = count * 2
         if len(data) != expected:
@@ -431,7 +409,7 @@ class RH56Protocol:
         return values
 
     @staticmethod
-    def parse_u8(data: bytes, count: int = 6) -> List[int]:
+    def parse_u8(data: bytes, count: int = 6) -> list[int]:
         """Parse unsigned 8-bit array."""
         if len(data) != count:
             raise ValueError(f"Expected {count} bytes, got {len(data)}")
@@ -461,27 +439,25 @@ def build_read_frame(node_id: int, addr: int, register_length: int) -> bytes:
     return RH56Protocol.build_read_reg16(node_id, addr, register_length)
 
 
-def parse_response(response: bytes) -> Tuple[int, int, List[int]]:
+def parse_response(response: bytes) -> tuple[int, int, list[int]]:
     return RH56Protocol.parse_response(response)
 
 
-def parse_reg16_values(data: bytes) -> List[int]:
+def parse_reg16_values(data: bytes) -> list[int]:
     return RH56Protocol.parse_reg16_values(data)
 
 
-def parse_read_response(
-    response: bytes, node_id: int, addr: int, register_length: int
-) -> bytes:
+def parse_read_response(response: bytes, node_id: int, addr: int, register_length: int) -> bytes:
     return RH56Protocol.parse_read_response(response, node_id, addr, register_length)
 
 
-def parse_u16_le(data: bytes, count: int = 6) -> List[int]:
+def parse_u16_le(data: bytes, count: int = 6) -> list[int]:
     return RH56Protocol.parse_u16_le(data, count)
 
 
-def parse_i16_le(data: bytes, count: int = 6) -> List[int]:
+def parse_i16_le(data: bytes, count: int = 6) -> list[int]:
     return RH56Protocol.parse_i16_le(data, count)
 
 
-def parse_u8(data: bytes, count: int = 6) -> List[int]:
+def parse_u8(data: bytes, count: int = 6) -> list[int]:
     return RH56Protocol.parse_u8(data, count)

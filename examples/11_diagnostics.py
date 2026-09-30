@@ -1,7 +1,6 @@
 import argparse
 import time
 
-
 from rh56_sdk import RH56Driver
 
 

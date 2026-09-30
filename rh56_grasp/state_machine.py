@@ -1,7 +1,6 @@
 """Small explicit state machine for high-level grasp workflows."""
 
 from enum import Enum
-from typing import Dict, Set
 
 
 class GraspState(str, Enum):
@@ -15,7 +14,7 @@ class GraspState(str, Enum):
     ERROR = "ERROR"
 
 
-_ALLOWED: Dict[GraspState, Set[GraspState]] = {
+_ALLOWED: dict[GraspState, set[GraspState]] = {
     GraspState.IDLE: {GraspState.OPEN, GraspState.PRE_SHAPE, GraspState.ERROR},
     GraspState.OPEN: {GraspState.PRE_SHAPE, GraspState.RELEASE, GraspState.ERROR},
     GraspState.PRE_SHAPE: {GraspState.CLOSING, GraspState.OPEN, GraspState.ERROR},

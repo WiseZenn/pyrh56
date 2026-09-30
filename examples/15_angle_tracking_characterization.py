@@ -3,7 +3,6 @@ import csv
 import json
 from pathlib import Path
 
-
 from rh56_sdk import RH56Driver
 from rh56_sdk.diagnostics import RH56Diagnostics
 
@@ -13,9 +12,7 @@ def _parse_int_list(text: str):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Characterize ANGLE_SET -> ANGLE_ACT tracking."
-    )
+    parser = argparse.ArgumentParser(description="Characterize ANGLE_SET -> ANGLE_ACT tracking.")
     parser.add_argument("--port", default="COM7")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--speed", type=int, default=250)

@@ -1,6 +1,6 @@
-import unittest
 import threading
 import time
+import unittest
 
 from rh56_sdk.exceptions import RH56ChecksumError, RH56ConnectionError
 from rh56_sdk.protocol import RH56Protocol, build_read_frame
@@ -48,7 +48,7 @@ def _read_response(data: bytes = b"\x00" * 12) -> bytes:
 class TransportTests(unittest.TestCase):
     def test_read_response_frame_scans_past_stale_bytes(self) -> None:
         transport = SerialTransport("COM_FAKE")
-        transport._ser = FakeSerial(b"\x00\xFF\x90\x00" + _read_response())
+        transport._ser = FakeSerial(b"\x00\xff\x90\x00" + _read_response())
 
         frame = transport.read_response_frame(timeout=0.1)
 
