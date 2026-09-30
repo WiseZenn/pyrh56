@@ -1,7 +1,8 @@
 """Reusable RH56 grasp pre-shapes.
 
 Values use the SDK ANGLE_SET coordinate space. Lower values close fingers.
-Thumb flex is kept at or above the SDK safety minimum of 200.
+These grasp presets keep thumb flex at or above 200 as a grasp policy;
+the SDK's default command range is 0-1000.
 """
 
 from typing import Dict, List

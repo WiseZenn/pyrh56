@@ -1,5 +1,5 @@
 """
-RH56 6-DOF dexterous hand serial bus protocol codec (based on user manual V1.08).
+RH56 6-DOF dexterous hand serial bus protocol codec (checked against manual V1.09).
 
 Frame Format
 ============

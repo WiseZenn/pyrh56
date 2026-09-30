@@ -45,7 +45,7 @@ pip install -e ".[dev]"
 from rh56_sdk import RH56Config, RH56Driver
 
 with RH56Driver("COM3") as hand:
-    hand.move_to([1000, 1000, 1000, 1000, 700, 900])   # 张开
+    hand.move_to([1000, 1000, 1000, 1000, 1000, 900])   # 张开
     angle  = hand.read_angle()
     force  = hand.read_force()
     status = hand.read_status()
@@ -61,9 +61,30 @@ hand.read_angle()  # → [0, 0, 0, 0, 0, 0]
 
 ---
 
+## 命令行
+
+命令名为 `pyrh56`，与 PyPI 包一致；当前开发版本可用 `pip install -e .` 安装。
+
+```console
+pyrh56 ports
+pyrh56 --port COM3 ping
+pyrh56 --port COM3 state
+pyrh56 --port COM3 doctor
+pyrh56 --port COM3 watch --fields angle,force --count 100 --jsonl > feedback.jsonl
+pyrh56 --mock state --json
+```
+
+控制命令包括 `move`、`finger`、`open`、`close`、`stop`、`speed`、`force`、`clear-error` 和 `calibrate`。
+`--wait` 通过实际角度判断到位；写 ACK 不代表动作完成。Mock 始终返回零反馈，不模拟动作。
+`finger` 只写所选通道寄存器。未知状态码产生诊断警告；除退出码外，还应查看 `health_verified`。
+也支持 `python -m rh56_sdk`。完整用法、单位、JSON 输出与退出码见[CLI 文档](docs/cli.md)。
+实现范围与验证记录见[开发计划](docs/development-plan.md)、[官方驱动核查](docs/official-driver-review.md)和[COM13 真机测试报告](docs/hardware-test-report.md)。
+
+---
+
 ## 协议
 
-RH56 使用 RS-232/RS-485 私有二进制协议（参考用户手册 V1.08）。
+RH56 使用 RS-232/RS-485 私有二进制协议（已对照官网 V1.09 手册）；本包没有实现 CAN/Modbus。
 
 | 方向 | 帧结构 |
 |------|--------|
@@ -88,9 +109,13 @@ RH56 使用 RS-232/RS-485 私有二进制协议（参考用户手册 V1.08）。
 |------|------|
 | `move_to(frame)` | 六通道全帧写入，带校验与限位 |
 | `move_finger(i, value)` | 单指增量控制，默认基于上次指令帧 |
+| `move_finger(i, value, base="hold")` | 只写所选通道，保留其他通道原目标寄存器 |
 | `set_speed(values)` | 六通道速度 (0–1000) |
 | `set_force_threshold(values)` | 六通道力控阈值 (0–1000) |
-| `stop_motion()` | 急停：速度置零，等待 ACK |
+| `stop_motion()` | 请求零速度并等待 ACK；COM13 实测 ACK 后仍有位移，不能保证即时停止 |
+| `check_motion_ready()` | 读取 STATUS/ERROR，检查当前硬件故障 |
+| `wait_until_reached(target)` | 轮询实际角度，`None` 跳过该通道；故障或超时抛出异常 |
+| `commanded_angle` | 最近同步或写入成功的目标帧副本 |
 | `recover_open_unchecked(confirm=True)` | 紧急张开，跳过 ACK 校验 |
 
 ### 反馈
@@ -163,10 +188,11 @@ src/rh56_sdk/
 ├── protocol.py    ← 二进制协议编解码
 ├── safety.py      ← 指令帧校验与限幅
 ├── driver.py      ← 统一公开 API
+├── cli.py         ← pyrh56 命令行（直接复用 SDK）
 ├── calibration.py ← 力传感器标定
 ├── diagnostics.py ← 反馈快照与特性测试
 ├── configuration.py, constants.py, enums.py, exceptions.py, models.py, registers.py
-tests/             ← 43 个单元测试，无需硬件
+tests/             ← SDK 与 CLI 测试，无需硬件
 ```
 
 分层依赖：`examples / grasp → driver → protocol / safety → transport`
@@ -175,9 +201,10 @@ tests/             ← 43 个单元测试，无需硬件
 
 ## 安全设计
 
-- 默认保守限位（拇指弯曲 200–700）。需完整范围时显式传入 `FACTORY_LIMITS`。
+- 默认 `DEFAULT_LIMITS` 六个通道范围均为 0–1000，与手册的明确角度范围一致。需要原来的拇指 200–700 范围可传入 `CONSERVATIVE_LIMITS`，CLI 使用 `--conservative-limits`。
+  已有 `FACTORY_LIMITS` 保留旧的拇指 200–1000 配置以兼容现有代码；可选较窄范围和 900 旋转预设仍是项目策略。
 - 所有写入前校验：长度（必须 6 值）、类型（拒绝 bool/NaN/Inf）、范围逐指检查。
-- 硬件故障后 `safe_stop` 自动置位，阻塞后续运动指令直到 `clear_error()` 成功。
+- 读取状态发现故障后 `safe_stop` 置位，阻塞后续运动指令直到 `clear_error()` 成功；该标记不等于已发送硬件停止指令。
 - `recover_open_unchecked` 需 `confirm=True` 显式确认。
 
 ---
@@ -185,9 +212,9 @@ tests/             ← 43 个单元测试，无需硬件
 ## 开发
 
 ```
-pytest                     # 43 测试，无需硬件
+pytest                     # SDK/CLI 测试，无需硬件
 ruff check .               # lint, line-length=100
-mypy src/rh56_sdk          # 严格类型检查
+mypy src/rh56_sdk          # 类型检查
 ```
 
 CI 覆盖 Windows / macOS / Linux，Python 3.10–3.13，含 CodeQL 安全扫描和 70% 覆盖率

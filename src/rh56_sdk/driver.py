@@ -29,7 +29,6 @@ from typing import Dict, List, Optional, Protocol, Sequence, Tuple
 
 from .constants import (
     RH56_OPEN_FRAME,
-    RH56_CLOSE_FRAME,
     SERVO_COUNT,
 )
 from .configuration import RH56Config
@@ -61,7 +60,14 @@ from .protocol import (
     parse_u16_le,
     parse_u8,
 )
-from .safety import normalize_angle_command, normalize_u16_vector
+from .safety import (
+    make_safe_close_frame,
+    make_safe_open_frame,
+    normalize_angle_command,
+    normalize_angle_targets,
+    normalize_u16_vector,
+)
+from .configuration import _check_duration, _check_integer
 from .transport import SerialTransport
 from .exceptions import (
     RH56BusyError,
@@ -124,9 +130,9 @@ class RH56Driver:
         else:
             self._config = RH56Config(
                 port=port,
-                baud=115200 if baud is None else int(baud),
-                node_id=1 if node_id is None else int(node_id),
-                timeout=0.1 if timeout is None else float(timeout),
+                baud=115200 if baud is None else baud,
+                node_id=1 if node_id is None else node_id,
+                timeout=0.1 if timeout is None else timeout,
             )
 
         self._node_id = int(self._config.node_id)
@@ -188,6 +194,66 @@ class RH56Driver:
         """Whether the serial port is currently connected."""
         return self._transport.is_connected
 
+    @property
+    def commanded_angle(self) -> list[int]:
+        """Return a copy of the latest synchronized or acknowledged target frame."""
+        return list(self._last_commanded_angle)
+
+    def check_motion_ready(self) -> None:
+        """Refresh STATUS/ERROR and reject hardware faults before a new motion sequence.
+
+        Call this explicitly when starting a sequence; move_to() retains cached
+        fault checks so existing control loops do not gain extra bus requests.
+        """
+        self._ensure_connected()
+        self._refresh_calibration_state()
+        if self.is_calibrating:
+            raise RH56BusyError("RH56 is calibrating; motion command rejected")
+        status = self.read_status()
+        errors = self.read_error()
+        if self._safe_stop or any(errors) or any(code in {5, 6, 7} for code in status):
+            self._safe_stop = True
+            raise RH56HardwareError(
+                f"Motion blocked: status={status}, errors={errors}. "
+                "Check the device and clear the fault before moving."
+            )
+
+    def wait_until_reached(
+        self,
+        target: Sequence[int | float | None],
+        *,
+        timeout: float = 5.0,
+        tolerance: int = 20,
+        interval: float = 0.05,
+    ) -> list[int]:
+        """Poll feedback until selected channels reach target; None skips a channel.
+
+        A force-limited stop alone is not position success. The deadline uses a
+        monotonic clock; an in-flight read can consume its configured request/retry budget.
+        """
+        expected = normalize_angle_targets(target, self._config.limits)
+        _check_duration(timeout, "motion timeout")
+        _check_duration(interval, "poll interval")
+        _check_integer(tolerance, "tolerance", 0, 1000)
+        deadline = time.monotonic() + timeout
+        actual: list[int] = []
+        while time.monotonic() < deadline:
+            self.check_motion_ready()
+            actual = self.read_angle()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            if all(
+                goal is None or abs(value - goal) <= tolerance
+                for value, goal in zip(actual, expected)
+            ):
+                return actual
+            time.sleep(min(interval, remaining))
+        raise RH56TimeoutError(
+            f"Motion did not reach target within {timeout}s: "
+            f"target={expected}, actual={actual}"
+        )
+
     # ==================================================================
     #  Full-frame control
     # ==================================================================
@@ -209,6 +275,14 @@ class RH56Driver:
         RH56NotConnectedError
             Serial port not connected.
         """
+        self._check_cached_motion_state()
+        normalized = normalize_angle_command(frame, self._config.limits)
+        self._write_reg16(REG_ANGLE_SET, normalized, wait_ack=True)
+        self._last_commanded_angle = list(normalized)
+        self._current_frame = self._last_commanded_angle
+
+    def _check_cached_motion_state(self) -> None:
+        """Shared motion guards for full-frame and isolated channel writes."""
         if self._communication_fault:
             raise RH56Error(
                 "Communication fault: feedback is stale. Restore reads and call "
@@ -220,14 +294,10 @@ class RH56Driver:
                 "RH56 is calibrating; motion command rejected."
             )
         if self._safe_stop:
-            raise RH56Error(
+            raise RH56HardwareError(
                 "Safe stop is active because hardware status reported a fault. "
                 "Check status/error and clear the fault before moving."
             )
-        normalized = normalize_angle_command(frame, self._config.limits)
-        self._write_reg16(REG_ANGLE_SET, normalized, wait_ack=True)
-        self._last_commanded_angle = list(normalized)
-        self._current_frame = self._last_commanded_angle
 
     def open(self) -> None:
         """Open hand to the safe open position."""
@@ -235,11 +305,11 @@ class RH56Driver:
 
     def open_hand(self) -> None:
         """Normal validated open command using configured safety limits."""
-        self.move_to(RH56_OPEN_FRAME)
+        self.move_to(make_safe_open_frame(self._config.limits))
 
     def close(self) -> None:
         """Close hand to the preset grasp position."""
-        self.move_to(RH56_CLOSE_FRAME)
+        self.move_to(make_safe_close_frame(self._config.limits))
 
     # ==================================================================
     #  Single-finger control
@@ -251,29 +321,47 @@ class RH56Driver:
         *,
         base: str = "last_command",
     ) -> None:
-        """Move a single finger and send the full frame.
+        """Move one finger; base='hold' writes only its register, leaving others untouched.
+
+        The existing last_command/actual modes retain full-frame behavior.
 
         Parameters
         ----------
         finger_index : int
             0=Pinky, 1=Ring, 2=Middle, 3=Index, 4=Thumb Flex, 5=Thumb Rot.
         value : int
-            Target position (0-1000; thumb flex minimum 200).
+            Target position in the configured range (default 0-1000).
         """
+        if isinstance(finger_index, bool) or not isinstance(finger_index, int):
+            raise RH56ValidationError("finger_index must be an integer or Finger")
         finger = int(finger_index)
         if finger < 0 or finger >= SERVO_COUNT:
             raise RH56ValidationError(
                 f"Finger index out of range: {finger}, "
                 f"valid range [0, {SERVO_COUNT - 1}]"
             )
+        frame: list[int | float]
+        if base == "hold":
+            limit = self._config.limits.as_tuple()[finger]
+            normalized = normalize_u16_vector(
+                [value],
+                name="finger angle",
+                count=1,
+                minimum=limit.minimum,
+                maximum=limit.maximum,
+            )[0]
+            self._check_cached_motion_state()
+            self._write_reg16(REG_ANGLE_SET + finger * 2, [normalized], wait_ack=True)
+            self._last_commanded_angle[finger] = normalized
+            return
         if base == "last_command":
             frame = list(self._last_commanded_angle)
         elif base == "actual":
             actual = self.read_angle()
             frame = list(actual)
         else:
-            raise RH56ValidationError("base must be 'last_command' or 'actual'")
-        frame[finger] = int(value)
+            raise RH56ValidationError("base must be 'last_command', 'actual', or 'hold'")
+        frame[finger] = value
         self.move_to(frame)
 
     # ==================================================================
@@ -589,8 +677,12 @@ class RH56Driver:
     #  Emergency operations
     # ==================================================================
     def stop_motion(self) -> None:
-        """Set SPEED_SET to zero and verify ACK."""
-        self.set_speed([0] * SERVO_COUNT)
+        """Request zero SPEED_SET and verify ACK, even during calibration.
+
+        This communication command is not a hardware emergency stop. The manual
+        does not guarantee zero-speed stopping behavior; verify on your device.
+        """
+        self._write_reg16(REG_SPEED_SET, [0] * SERVO_COUNT, allow_while_calibrating=True)
 
     def stop(self) -> None:
         """Deprecated: use stop_motion()."""
@@ -697,7 +789,7 @@ class RH56Driver:
             try:
                 response = self._transport.request(
                     request_frame,
-                    timeout=self._config.retry.timeout,
+                    timeout=self._config.request_timeout,
                 )
                 data = parse_read_response(
                     response, self._node_id, addr, register_length
@@ -734,7 +826,7 @@ class RH56Driver:
             try:
                 response = self._transport.request(
                     request_frame,
-                    timeout=self._config.retry.timeout,
+                    timeout=self._config.request_timeout,
                 )
                 data = parse_read_response(
                     response, self._node_id, addr, length
@@ -760,7 +852,12 @@ class RH56Driver:
     #  Internal: write registers
     # ==================================================================
     def _write_reg16(
-        self, addr: int, data: List[int], wait_ack: bool = True
+        self,
+        addr: int,
+        data: List[int],
+        wait_ack: bool = True,
+        *,
+        allow_while_calibrating: bool = False,
     ) -> None:
         """Build and send a write frame. Optionally wait for ACK.
 
@@ -778,18 +875,18 @@ class RH56Driver:
         if not self.is_connected:
             raise RH56NotConnectedError("Serial port not connected")
         self._refresh_calibration_state()
-        if self.is_calibrating:
+        if self.is_calibrating and not allow_while_calibrating:
             raise RH56BusyError("RH56 is calibrating; 16-bit write rejected")
 
         frame = build_reg16_frame(self._node_id, addr, data)
         try:
-            if wait_ack and not self._transport.is_mock:
-                ack = self._transport.request(frame, timeout=self._config.retry.timeout)
+            if wait_ack:
+                ack = self._transport.request(frame, timeout=self._config.request_timeout)
                 RH56Protocol.parse_write_ack(ack, self._node_id, addr)
             else:
                 self._transport.write(frame)
         except Exception:
-            logger.exception("Write reg 0x%04X failed", addr)
+            logger.debug("Write reg 0x%04X failed", addr, exc_info=True)
             raise
 
         self.last_command = {
@@ -807,18 +904,18 @@ class RH56Driver:
             )
         if not self.is_connected:
             raise RH56NotConnectedError("Serial port not connected")
-        if not 0 <= int(value) <= 0xFF:
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 0xFF:
             raise RH56ValidationError(f"u8 value out of range: {value}")
 
         frame = build_write_bytes_frame(self._node_id, addr, bytes([int(value)]))
         try:
-            if wait_ack and not self._transport.is_mock:
-                ack = self._transport.request(frame, timeout=self._config.retry.timeout)
+            if wait_ack:
+                ack = self._transport.request(frame, timeout=self._config.request_timeout)
                 RH56Protocol.parse_write_ack(ack, self._node_id, addr)
             else:
                 self._transport.write(frame)
         except Exception:
-            logger.exception("Write u8 reg 0x%04X failed", addr)
+            logger.debug("Write u8 reg 0x%04X failed", addr, exc_info=True)
             raise
 
         self.last_command = {

@@ -6,7 +6,7 @@ Rules (aligned with core.py design)
 - Frame must be exactly 6 integer values.
 - Every value must be finite (no NaN / Inf).
 - Finger servos: 0-1000.
-- Thumb flex: minimum close limit 200, maximum open limit 1000.
+- Thumb flex: default range 0-1000; optional profiles can narrow the range.
 - Thumb rotation: safe default 900.
 - **Validation failure raises an exception -- never silently send.**
 - Connectivity is enforced by the transport layer.
@@ -24,8 +24,9 @@ from .constants import (
     RH56_THUMB_FLEX_CLOSE_LIMIT,
     RH56_THUMB_FLEX_OPEN_LIMIT,
     RH56_OPEN_FRAME,
+    RH56_CLOSE_FRAME,
 )
-from .configuration import CONSERVATIVE_LIMITS, HandLimits
+from .configuration import DEFAULT_LIMITS, HandLimits
 from .exceptions import RH56ServoLimitError, RH56ValidationError
 
 
@@ -67,7 +68,7 @@ def normalize_u16_vector(
 
 def normalize_angle_command(
     frame: Sequence[int | float],
-    limits: HandLimits = CONSERVATIVE_LIMITS,
+    limits: HandLimits = DEFAULT_LIMITS,
 ) -> List[int]:
     """Validate, round, and return the only angle form accepted by protocol writes."""
     if frame is None:
@@ -108,7 +109,32 @@ def validate_frame(frame: Sequence[int | float]) -> None:
     RH56ServoLimitError
         A servo value exceeds hardware limits.
     """
-    normalize_angle_command(frame, CONSERVATIVE_LIMITS)
+    normalize_angle_command(frame, DEFAULT_LIMITS)
+
+
+def normalize_angle_targets(
+    targets: Sequence[int | float | None],
+    limits: HandLimits = DEFAULT_LIMITS,
+) -> list[int | None]:
+    """Validate feedback-wait targets; None excludes a channel from arrival checks."""
+    if targets is None or len(targets) != SERVO_COUNT:
+        raise RH56ValidationError("target must contain exactly 6 values")
+    result: list[int | None] = []
+    for index, (value, limit) in enumerate(zip(targets, limits.as_tuple())):
+        if value is None:
+            result.append(None)
+        else:
+            normalized = normalize_u16_vector(
+                [value],
+                name=f"target[{index}]",
+                count=1,
+                minimum=limit.minimum,
+                maximum=limit.maximum,
+            )
+            result.append(normalized[0])
+    if all(value is None for value in result):
+        raise RH56ValidationError("target must select at least one channel")
+    return result
 
 
 def clamp_servo_value(value: int, finger_index: int) -> int:
@@ -134,9 +160,21 @@ def apply_thumb_limit(frame: List[int]) -> List[int]:
 
     Unlike ``clamp_frame``, only the thumb is modified; finger values pass through.
     """
-    return normalize_angle_command(frame, CONSERVATIVE_LIMITS)
+    return normalize_angle_command(frame, DEFAULT_LIMITS)
 
 
-def make_safe_open_frame() -> List[int]:
-    """Return a copy of the safe open-hand frame."""
-    return list(RH56_OPEN_FRAME)
+def make_safe_open_frame(limits: HandLimits = DEFAULT_LIMITS) -> List[int]:
+    """Select the open preset within configured ranges, including optional conservative limits."""
+    return _preset_within_limits(RH56_OPEN_FRAME, limits)
+
+
+def make_safe_close_frame(limits: HandLimits = DEFAULT_LIMITS) -> List[int]:
+    """Select the close preset within configured ranges."""
+    return _preset_within_limits(RH56_CLOSE_FRAME, limits)
+
+
+def _preset_within_limits(frame: Sequence[int], limits: HandLimits) -> List[int]:
+    return [
+        max(limit.minimum, min(value, limit.maximum))
+        for value, limit in zip(frame, limits.as_tuple())
+    ]

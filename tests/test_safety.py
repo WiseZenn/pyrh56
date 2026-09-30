@@ -27,7 +27,7 @@ class SafetyTests(unittest.TestCase):
     def test_clamp_frame_limits_values(self) -> None:
         self.assertEqual(
             clamp_frame([-1, 500, 1001, 1000, 0, 1500]),
-            [0, 500, 1000, 1000, 200, 1000],
+            [0, 500, 1000, 1000, 0, 1000],
         )
 
     def test_u16_vector_rejects_range_bool_and_infinite_values(self) -> None:

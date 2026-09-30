@@ -1,5 +1,5 @@
 """
-RH56 servo control register address map (based on user manual V1.08).
+RH56 servo control register address map (checked against user manual V1.09).
 
 All 16-bit data is **little-endian** (low byte first).
 """
@@ -12,7 +12,7 @@ REG_BAUD_RATE = 1002
 REG_CLEAR_ERROR = 1004
 REG_SAVE = 1005
 REG_RESET_PARA = 1006
-REG_GESTURE_NO_SET = 1008
+REG_GESTURE_NO_SET = 1008         # Legacy alias; reserved in V1.09, not used by this SDK
 REG_GESTURE_FORCE_CLB = 1009
 
 # ==================================================================
@@ -21,7 +21,7 @@ REG_GESTURE_FORCE_CLB = 1009
 REG_CURRENT_LIMIT = 1020          # 6 short, 12 bytes
 REG_DEFAULT_SPEED_SET = 1032      # 6 short, 12 bytes
 REG_DEFAULT_FORCE_SET = 1044      # 6 short, 12 bytes
-REG_USER_DEF_ANGLE = 1066         # 32 x 6 short
+REG_USER_DEF_ANGLE = 1066         # Legacy constant; not documented in V1.09, not used
 
 # ==================================================================
 #  Runtime command registers
@@ -38,7 +38,7 @@ REG_SPEED_SET = 1522              # 6 short, 12 bytes, range 0-1000
 # ==================================================================
 REG_POS_ACT = 1534                # Actuator actual position, 6 short, 12 bytes, 0-2000
 REG_ANGLE_ACT = 1546              # Angle actual value, 6 short, 12 bytes, 0-1000
-REG_FORCE_ACT = 1582              # Actual force, 6 short, 12 bytes, 0-1000
+REG_FORCE_ACT = 1582              # Actual force, 6 signed short, 12 bytes, grams
 REG_CURRENT = 1594                # Current, 6 short, 12 bytes, mA
 REG_ERROR = 1606                  # Error code, 6 bytes
 REG_STATUS = 1612                 # Status code, 6 bytes

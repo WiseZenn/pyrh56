@@ -27,6 +27,7 @@ from .exceptions import (
     RH56TimeoutError,
 )
 from .protocol import RH56Protocol
+from .models import SerialPortInfo
 
 logger = logging.getLogger(__name__)
 
@@ -90,10 +91,32 @@ class SerialTransport:
     # ------------------------------------------------------------------
     @staticmethod
     def list_ports() -> List[str]:
-        """Return available serial port names (or ``['COM_MOCK']`` without pyserial)."""
-        if list_ports:
-            return [p.device for p in list_ports.comports()]
-        return ["COM_MOCK"]
+        """Return real serial port names; Mock must be selected explicitly."""
+        return [port.device for port in SerialTransport.list_port_info()]
+
+    @staticmethod
+    def list_port_info() -> list[SerialPortInfo]:
+        """Enumerate serial adapters without opening them or probing hardware."""
+        if list_ports is None:
+            raise RH56ConnectionError("pyserial is required to enumerate serial ports")
+        try:
+            return sorted(
+                [
+                    SerialPortInfo(
+                        device=port.device,
+                        description=port.description,
+                        hwid=port.hwid,
+                        vid=port.vid,
+                        pid=port.pid,
+                        serial_number=port.serial_number,
+                        manufacturer=port.manufacturer,
+                    )
+                    for port in list_ports.comports()
+                ],
+                key=lambda port: port.device,
+            )
+        except OSError as exc:
+            raise RH56ConnectionError(f"Cannot enumerate serial ports: {exc}") from exc
 
     # ------------------------------------------------------------------
     #  Connection state

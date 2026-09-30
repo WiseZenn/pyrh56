@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyrh56"
-version = "0.3.0"
-description = "Python driver for the Inspire Robots RH56 dexterous hand"
+version = "0.4.0"
+description = "Python driver and command-line tools for the Inspire Robots RH56 dexterous hand"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
@@ -39,6 +39,9 @@ dependencies = [
     "pyserial>=3.5",
 ]
 
+[project.scripts]
+pyrh56 = "rh56_sdk.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/WiseZenn/pyrh56"
 Documentation = "https://github.com/WiseZenn/pyrh56#readme"
@@ -55,6 +58,23 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rh56_sdk"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src/rh56_sdk",
+    "/tests",
+    "/examples",
+    "/rh56_grasp",
+    "/docs",
+    "/README.md",
+    "/README_CN.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/CONTRIBUTING.md",
+    "/CODE_OF_CONDUCT.md",
+    "/SECURITY.md",
+    "/pyproject.toml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

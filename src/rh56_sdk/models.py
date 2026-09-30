@@ -7,6 +7,19 @@ JointVector: TypeAlias = tuple[int, int, int, int, int, int]
 
 
 @dataclass(frozen=True)
+class SerialPortInfo:
+    """Serial adapter information; enumeration does not identify RH56 devices."""
+
+    device: str
+    description: str
+    hwid: str
+    vid: int | None = None
+    pid: int | None = None
+    serial_number: str | None = None
+    manufacturer: str | None = None
+
+
+@dataclass(frozen=True)
 class FeedbackSnapshot:
     """Typed snapshot for low-frequency feedback and diagnostics."""
 
