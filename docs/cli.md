@@ -4,15 +4,16 @@
 
 ## 安装与首次使用
 
-在本仓库安装当前开发版本：
+安装或升级 PyPI 发行版（CLI 需要 0.4.0 及后续版本）：
 
 ```console
-python -m pip install -e .
+python -m pip install --upgrade pyrh56
 pyrh56 --version
 pyrh56 --help
 ```
 
-同一个入口也可以通过 `python -m rh56_sdk` 使用。发布后，`pip install pyrh56` 会安装控制台入口。
+同一个入口也可以通过 `python -m rh56_sdk` 使用。
+从源码开发时，在仓库目录运行 `python -m pip install -e .`。
 
 先列出串口适配器，再选择串口验证通信：
 
