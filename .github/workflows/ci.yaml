@@ -1,0 +1,95 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install build and validation tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]" build "twine>=7,<8"
+
+      - name: Verify release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          from rh56_sdk import __version__
+
+          project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
+          tag = os.environ["RELEASE_TAG"]
+          if project["name"] != "pyrh56":
+              raise SystemExit("Release project must be pyrh56")
+          if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+              raise SystemExit(f"Expected a stable release tag, got {tag!r}")
+          if tag != f"v{project['version']}" or __version__ != project["version"]:
+              raise SystemExit("Tag, package metadata and SDK version must match")
+          print(f"Validated {project['name']} {project['version']}")
+          PY
+
+      - name: Check SDK and CLI
+        run: |
+          python -m pytest -q --cov=rh56_sdk --cov-fail-under=70
+          python -m ruff check .
+          python -m mypy src/rh56_sdk
+
+      - name: Build and check distributions
+        run: |
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: Check installed wheel outside the source directory
+        run: |
+          python -m venv "$RUNNER_TEMP/pyrh56-wheel"
+          "$RUNNER_TEMP/pyrh56-wheel/bin/python" -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/pyrh56-wheel/bin/pyrh56" --version
+          "$RUNNER_TEMP/pyrh56-wheel/bin/pyrh56" --mock state --json
+          "$RUNNER_TEMP/pyrh56-wheel/bin/pyrh56" --mock doctor --json
+          "$RUNNER_TEMP/pyrh56-wheel/bin/pyrh56" --mock watch --count 2 --jsonl
+          "$RUNNER_TEMP/pyrh56-wheel/bin/python" -m rh56_sdk --mock ping --json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/
+
+      - name: Publish distributions to PyPI using OIDC
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1

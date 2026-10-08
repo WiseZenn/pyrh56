@@ -21,7 +21,7 @@ calibration, and diagnostics.
 ## Install
 
 ```
-pip install pyrh56
+python -m pip install --upgrade pyrh56
 ```
 
 Python ≥ 3.10. Runtime dependency: [pyserial](https://github.com/pyserial/pyserial).
@@ -64,8 +64,8 @@ hand.read_angle()  # → [0, 0, 0, 0, 0, 0]
 
 ## Command line
 
-The command is `pyrh56`, matching the distribution name. Install this development version with
-`pip install -e .`.
+The command is `pyrh56`, matching the distribution name. The CLI is included in version 0.4.0
+and later; upgrade an existing installation with `python -m pip install --upgrade pyrh56`.
 
 ```console
 pyrh56 ports

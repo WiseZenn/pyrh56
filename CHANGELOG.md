@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.4.0 (2026-10-08)
 
 - Add the `pyrh56` console command and `python -m rh56_sdk` entry point with no new runtime dependency.
 - Add serial adapter listing, verified ping, feedback snapshots/streams, read-only diagnostics,

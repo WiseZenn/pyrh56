@@ -20,7 +20,7 @@ Inspire Robots RH56 六自由度灵巧手的底层 Python 驱动——串口通�
 ## 安装
 
 ```
-pip install pyrh56
+python -m pip install --upgrade pyrh56
 ```
 
 Python ≥ 3.10。运行时仅依赖 [pyserial](https://github.com/pyserial/pyserial)。
@@ -63,7 +63,8 @@ hand.read_angle()  # → [0, 0, 0, 0, 0, 0]
 
 ## 命令行
 
-命令名为 `pyrh56`，与 PyPI 包一致；当前开发版本可用 `pip install -e .` 安装。
+命令名为 `pyrh56`，与 PyPI 包一致；0.4.0 及后续版本包含 CLI。
+已有安装可运行 `python -m pip install --upgrade pyrh56` 升级。
 
 ```console
 pyrh56 ports
